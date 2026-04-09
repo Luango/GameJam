@@ -2,10 +2,8 @@ import { init, render, getScene, getCamera } from './renderer/SphereRenderer.js'
 import { buildGrid, updateTiles } from './renderer/HexGrid.js';
 import { initPathTracer } from './renderer/PathTracer.js';
 import { initTokens, updateTokens } from './renderer/PlayerToken.js';
-
-// Phase 2 — imported once RenderBridge and MockEventHarness are implemented
-// import { init as initBridge } from './state/RenderBridge.js';
-// import { initHarness } from './dev/MockEventHarness.js';
+import { init as initBridge, handleTilePick } from './state/RenderBridge.js';
+import { initHarness } from './dev/MockEventHarness.js';
 
 // Phase 3 — HUD modules imported once implemented
 // import { init as initVoltage } from './hud/VoltageDisplay.js';
@@ -18,17 +16,27 @@ const canvas = document.getElementById('canvas');
 const hud    = document.getElementById('hud');
 
 // --- Renderer ---
-const { scene } = init(canvas);
+const { scene, camera } = init(canvas);
 
 // --- Phase 1: 3D scene ---
 buildGrid(scene);
 initPathTracer(scene);
 initTokens(scene);
 
-// --- Phase 2 bootstrap (uncomment when implemented) ---
-// const eventBus = new EventTarget();
-// initBridge(eventBus, scene);
-// if (import.meta.env.DEV) initHarness(eventBus);
+// --- Phase 2: event bridge + mock harness ---
+const eventBus = new EventTarget();
+initBridge(eventBus);
+if (import.meta.env.DEV) initHarness(eventBus);
+
+// Tile picking — forward canvas clicks to RenderBridge
+canvas.addEventListener('pointerup', (e) => {
+  const rect = canvas.getBoundingClientRect();
+  const ndc = {
+    x:  ((e.clientX - rect.left) / rect.width)  * 2 - 1,
+    y: -((e.clientY - rect.top)  / rect.height) * 2 + 1,
+  };
+  handleTilePick(ndc, camera);
+});
 
 // --- Phase 3 bootstrap (uncomment when implemented) ---
 // initVoltage(hud);
