@@ -28,10 +28,7 @@ export function init(container) {
   panel.innerHTML = `
     <style>
       #cs-voltage {
-        left: 14px;
-        top: 50%;
-        transform: translateY(-50%);
-        width: 100px;
+        width: 100%;
         padding: 12px 10px;
         display: flex;
         flex-direction: column;

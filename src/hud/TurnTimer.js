@@ -37,9 +37,6 @@ export function init(container, { onLock } = {}) {
   panel.innerHTML = `
     <style>
       #cs-timer {
-        top: 14px;
-        left: 50%;
-        transform: translateX(-50%);
         padding: 10px 14px;
         display: flex;
         flex-direction: column;

@@ -14,6 +14,17 @@ let _playerCount = 2;
 export function initHarness(eventBus) {
   _bus = eventBus;
   _mountPanel();
+
+  // Toggle visibility with backtick ` key (dev secret)
+  document.addEventListener('keydown', (e) => {
+    if (e.key === '`') {
+      const panel = document.getElementById('mock-harness');
+      if (!panel) return;
+      const hidden = panel.dataset.hidden === 'true';
+      panel.dataset.hidden = hidden ? 'false' : 'true';
+      panel.style.display  = hidden ? 'block' : 'none';
+    }
+  });
 }
 
 function _fire(eventName, detail) {
@@ -163,6 +174,9 @@ function _mountPanel() {
     <button class="btn-end" id="mh-round-end">■ onRoundEnd</button>
   `;
 
+  // Hidden by default — press ` (backtick) to toggle
+  panel.dataset.hidden = 'true';
+  panel.style.display  = 'none';
   document.body.appendChild(panel);
 
   // ─── Wire buttons ─────────────────────────────────────────────────────────

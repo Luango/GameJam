@@ -58,13 +58,11 @@ export function init(container) {
   panel.innerHTML = `
     <style>
       #cs-overview {
-        top: 14px;
-        right: 14px;
+        width: 100%;
         padding: 10px 12px;
         display: flex;
         flex-direction: column;
         gap: 6px;
-        width: 224px;
       }
 
       #cs-overview .ov-header {
@@ -85,6 +83,7 @@ export function init(container) {
         border-radius: 3px;
         border: 1px solid rgba(0,201,167,0.15);
         display: block;
+        width: 100%;
         image-rendering: pixelated;
       }
 

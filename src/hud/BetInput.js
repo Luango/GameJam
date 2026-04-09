@@ -22,9 +22,7 @@ export function init(container) {
   panel.innerHTML = `
     <style>
       #cs-bet {
-        bottom: 14px;
-        left: 14px;
-        width: 210px;
+        width: 100%;
         padding: 12px 14px;
         display: flex;
         flex-direction: column;

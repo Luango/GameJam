@@ -11,6 +11,11 @@ let _controls = null;
 let _idleTimer = null;
 let _isIdle    = false;
 
+// Camera focus animation
+let _focusTarget    = null;  // THREE.Vector3 desired camera position
+let _focusAnimating = false;
+const FOCUS_LERP = 0.055;
+
 const IDLE_TIMEOUT_MS = 3000;
 const AUTO_ROTATE_SPEED = 0.3;
 
@@ -103,8 +108,47 @@ function _addWindowResizeHandler(canvas) {
 
 /** Call once per frame from the main render loop. */
 export function render() {
-  _controls.update();
+  if (_focusAnimating && _focusTarget) {
+    _camera.position.lerp(_focusTarget, FOCUS_LERP);
+    _camera.lookAt(0, 0, 0);
+    if (_camera.position.distanceTo(_focusTarget) < 0.015) {
+      _camera.position.copy(_focusTarget);
+      _focusAnimating = false;
+      _focusTarget = null;
+      _controls.enabled = true;
+    }
+  } else {
+    _controls.update();
+  }
   _renderer.render(_scene, _camera);
+}
+
+/**
+ * Smoothly orbit the camera to face a world-space position on the sphere.
+ * Disables OrbitControls during the animation.
+ */
+export function focusOnPosition(worldPos) {
+  const dist = _camera.position.length();
+  _focusTarget = worldPos.clone().normalize().multiplyScalar(dist);
+  _focusAnimating = true;
+  _controls.enabled = false;
+  clearTimeout(_idleTimer);
+}
+
+/** Prevent idle auto-rotate (call when it's the local player's turn). */
+export function stopAutoRotate() {
+  clearTimeout(_idleTimer);
+  _controls.autoRotate = false;
+  _isIdle = false;
+}
+
+/** Re-enable idle auto-rotate (call when it's another player's turn). */
+export function resumeAutoRotate() {
+  _idleTimer = setTimeout(() => {
+    _controls.autoRotate = true;
+    _controls.autoRotateSpeed = AUTO_ROTATE_SPEED;
+    _isIdle = true;
+  }, IDLE_TIMEOUT_MS);
 }
 
 export function getScene()    { return _scene; }

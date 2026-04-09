@@ -24,8 +24,9 @@ export function injectStyles() {
       border-radius: 6px;
       color: #cbd5e1;
       font-family: 'Rajdhani', 'Segoe UI', sans-serif;
-      position: absolute;
+      position: relative;
       pointer-events: auto;
+      flex-shrink: 0;
     }
 
     .cs-panel::before {

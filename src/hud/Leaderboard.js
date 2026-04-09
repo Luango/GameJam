@@ -21,9 +21,7 @@ export function init(container) {
   panel.innerHTML = `
     <style>
       #cs-leaderboard {
-        top: 14px;
-        left: 14px;
-        width: 158px;
+        width: 100%;
         padding: 10px 12px;
       }
 

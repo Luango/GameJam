@@ -29,9 +29,7 @@ export function init(container, { getBet } = {}) {
   panel.innerHTML = `
     <style>
       #cs-cashout {
-        bottom: 14px;
-        right: 14px;
-        width: 180px;
+        width: 100%;
         padding: 12px 14px;
         display: flex;
         flex-direction: column;
