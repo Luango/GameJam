@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Circuit Sphere</title>
+    <style>
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+
+      body {
+        background: #0a0a0f;
+        overflow: hidden;
+        font-family: 'Segoe UI', system-ui, sans-serif;
+        color: #e2e8f0;
+      }
+
+      #app {
+        position: relative;
+        width: 100vw;
+        height: 100vh;
+      }
+
+      #canvas {
+        display: block;
+        width: 100%;
+        height: 100%;
+      }
+
+      #hud {
+        position: absolute;
+        inset: 0;
+        pointer-events: none;
+      }
+
+      /* Mobile guard */
+      #mobile-guard {
+        display: none;
+        position: fixed;
+        inset: 0;
+        background: #0a0a0f;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        padding: 2rem;
+        z-index: 9999;
+      }
+
+      @media (max-width: 768px) {
+        #mobile-guard { display: flex; }
+      }
+    </style>
+    <script type="module" crossorigin src="/GameJam/assets/index-D-WXRLc0.js"></script>
+  </head>
+  <body>
+    <div id="app">
+      <canvas id="canvas"></canvas>
+      <div id="hud"></div>
+    </div>
+
+    <div id="mobile-guard">
+      <p style="font-size:1.25rem; color:#94a3b8;">Circuit Sphere requires a desktop browser.</p>
+    </div>
+
+    <!-- PeerJS — required by js/network.js (uses global `new Peer()`) -->
+    <script src="https://cdn.jsdelivr.net/npm/peerjs@1.5.4/dist/peerjs.min.js"></script>
+  </body>
+</html>
