@@ -1,0 +1,35 @@
+{
+  "_comment": "P3 OWNS this file. Fill in paths and P2 will hot-swap procedural placeholders automatically. Keys must match exactly.",
+  "tiles": {
+    "safe":     "",
+    "charged":  "",
+    "critical": "",
+    "safe_normal":     "",
+    "charged_normal":  "",
+    "critical_normal": ""
+  },
+  "tile_states": {
+    "reveal_safe":  "",
+    "reveal_trap":  "",
+    "reward_pulse": "",
+    "bust_flash":   ""
+  },
+  "token": {
+    "mesh": ""
+  },
+  "sfx": {
+    "step_safe":     "",
+    "step_charged":  "",
+    "step_critical": "",
+    "bust":          "",
+    "cashout":       "",
+    "reward":        "",
+    "zone_charged":  "",
+    "zone_critical": ""
+  },
+  "vfx": {
+    "bust":       "",
+    "zone_enter": "",
+    "reward":     ""
+  }
+}
