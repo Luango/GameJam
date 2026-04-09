@@ -3,7 +3,7 @@ name: Deploy Circuit Sphere to GitHub Pages
 on:
   push:
     branches:
-      - p2p-multiplayer    # ONLY deploys from this branch
+      - master
 
 permissions:
   contents: read
@@ -21,10 +21,10 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout p2p-multiplayer branch
+      - name: Checkout master branch
         uses: actions/checkout@v4
         with:
-          ref: p2p-multiplayer
+          ref: master
 
       - name: Setup Pages
         uses: actions/configure-pages@v5
