@@ -3,7 +3,8 @@ name: Deploy Circuit Sphere to GitHub Pages
 on:
   push:
     branches:
-      - integration    # P2 Vite build deploys from integration branch
+      - master           # Deploy from master
+      - integration      # P2 Vite build deploys from integration branch
       - p2p-multiplayer  # P1 vanilla build deploys from p2p-multiplayer branch
   workflow_dispatch:
 
@@ -17,6 +18,36 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # ── Master deploy (Vite build) ────────────────────────────────────────────
+  build-master:
+    if: github.ref == 'refs/heads/master'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - run: npm run build
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy-master:
+    if: github.ref == 'refs/heads/master'
+    needs: build-master
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/deploy-pages@v4
+        id: deployment
+
   # ── P2 Vite build (feat/board-ui → integration) ──────────────────────────
   build-p2:
     if: github.ref == 'refs/heads/integration'
