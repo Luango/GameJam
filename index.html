@@ -148,6 +148,146 @@
     .ready-active { border-color: #00ffaa88 !important; color: #00ffaa !important; }
 
     /* ═══════════════════════════════════════
+       BETTING PHASE
+       ═══════════════════════════════════════ */
+    #betting-phase {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 100;
+      background: radial-gradient(ellipse at center, #0a0a20 0%, #000 70%);
+    }
+    .betting-container {
+      text-align: center;
+      max-width: 400px;
+      width: 90%;
+    }
+    .betting-title {
+      font-size: 1.8rem;
+      font-weight: bold;
+      letter-spacing: 6px;
+      margin-bottom: 24px;
+      background: linear-gradient(135deg, #ffcc00, #ff8c00);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .betting-bankroll {
+      padding: 16px;
+      margin-bottom: 16px;
+      background: #0a0a20;
+      border: 1px solid #00ffaa22;
+      text-align: center;
+    }
+    .betting-bet-box {
+      padding: 16px;
+      margin-bottom: 16px;
+      background: #0a0a20;
+      border: 1px solid #00ffaa22;
+      text-align: center;
+    }
+    .bankroll-label, .bet-label {
+      display: block;
+      font-size: 0.6rem;
+      color: #446;
+      letter-spacing: 3px;
+      margin-bottom: 6px;
+    }
+    .bankroll-value {
+      font-size: 1.5rem;
+      color: #ffcc00;
+      letter-spacing: 2px;
+    }
+    .bet-controls {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+    }
+    .bet-value {
+      font-size: 1.5rem;
+      color: #00ffaa;
+      letter-spacing: 2px;
+      min-width: 70px;
+      display: inline-block;
+    }
+    .bet-arrow-btn {
+      background: none;
+      border: 1px solid #00ffaa33;
+      color: #00ffaa;
+      font-size: 1.1rem;
+      padding: 4px 14px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.2s;
+    }
+    .bet-arrow-btn:hover:not(:disabled) {
+      border-color: #00ffaa88;
+      background: #00ffaa11;
+    }
+    .bet-arrow-btn:disabled {
+      opacity: 0.25;
+      cursor: default;
+    }
+    .betting-timer {
+      font-size: 2rem;
+      font-weight: bold;
+      color: #00FFAA;
+      letter-spacing: 4px;
+      margin-bottom: 16px;
+      text-shadow: 0 0 20px #00ffaa44;
+      transition: transform 0.2s;
+    }
+    .betting-timer.timer-warning {
+      transform: scale(1.1);
+    }
+    .betting-timer.timer-urgent {
+      animation: timerPulse 0.5s infinite;
+      transform: scale(1.15);
+    }
+
+    /* Phase start flash */
+    .phase-flash {
+      animation: phaseFlash 0.6s ease-out;
+    }
+    @keyframes phaseFlash {
+      0% { box-shadow: inset 0 0 80px #00ffaa44; }
+      100% { box-shadow: inset 0 0 0px transparent; }
+    }
+
+    /* Timer warning scale for HUD */
+    #timer-display.timer-warning {
+      transform: translateX(-50%) scale(1.1);
+    }
+    #timer-display.timer-urgent {
+      transform: translateX(-50%) scale(1.15);
+    }
+
+    #betting-player-list {
+      margin-top: 16px;
+    }
+    .betting-player-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 12px;
+      margin: 4px 0;
+      background: #111122;
+      border-left: 3px solid #334;
+      font-size: 0.8rem;
+    }
+    .betting-player-item.bet-placed { border-left-color: #ffcc00; }
+    .bet-status-icon { min-width: 20px; text-align: center; font-size: 0.75rem; }
+    .betting-status {
+      margin-top: 12px;
+      font-size: 0.75rem;
+      color: #668;
+      letter-spacing: 2px;
+      min-height: 1.2em;
+    }
+
+    /* ═══════════════════════════════════════
        HUD
        ═══════════════════════════════════════ */
     #hud {
@@ -226,6 +366,135 @@
     .hud-player-voltage { font-size: 0.75rem; min-width: 50px; text-align: right; }
     .hud-player-status { font-size: 0.75rem; min-width: 20px; text-align: center; }
 
+    /* Turn start banner */
+    .turn-banner {
+      position: absolute;
+      top: 45%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      font-size: 2.2rem;
+      font-weight: bold;
+      letter-spacing: 8px;
+      color: #00ffaa;
+      text-shadow: 0 0 30px #00ffaa66, 0 0 60px #00ffaa22;
+      pointer-events: none;
+      z-index: 55;
+      opacity: 0;
+      animation: turnBannerIn 1.2s ease-out forwards;
+    }
+    @keyframes turnBannerIn {
+      0%   { opacity: 0; transform: translate(-50%, -50%) scale(0.6); }
+      20%  { opacity: 1; transform: translate(-50%, -50%) scale(1.05); }
+      40%  { opacity: 1; transform: translate(-50%, -50%) scale(1.0); }
+      100% { opacity: 0; transform: translate(-50%, -50%) scale(1.0) translateY(-20px); }
+    }
+
+    /* Cash out button ready pulse */
+    #cashout-btn.btn-ready {
+      animation: btnReadyPulse 1.5s ease-in-out infinite;
+      border-color: #00ffaa88;
+    }
+    @keyframes btnReadyPulse {
+      0%, 100% { box-shadow: 0 0 10px #00ffaa22; }
+      50% { box-shadow: 0 0 25px #00ffaa44, 0 0 50px #00ffaa11; }
+    }
+
+    /* Voltage gain popup */
+    .voltage-gain-popup {
+      position: absolute;
+      top: 35%;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 1.4rem;
+      font-weight: bold;
+      color: #00ffaa;
+      letter-spacing: 3px;
+      text-shadow: 0 0 15px #00ffaa66;
+      pointer-events: none;
+      z-index: 55;
+      animation: voltageGainFloat 1.5s ease-out forwards;
+    }
+    .voltage-gain-popup.reward-gain {
+      color: #FFD700;
+      text-shadow: 0 0 15px #FFD70066;
+      font-size: 1.6rem;
+    }
+    @keyframes voltageGainFloat {
+      0%   { opacity: 1; transform: translateX(-50%) translateY(0) scale(1.2); }
+      30%  { opacity: 1; transform: translateX(-50%) translateY(-10px) scale(1.0); }
+      100% { opacity: 0; transform: translateX(-50%) translateY(-40px); }
+    }
+
+    /* Payout popup */
+    .payout-popup {
+      position: absolute;
+      top: 40%;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 1.6rem;
+      font-weight: bold;
+      color: #FFD700;
+      letter-spacing: 4px;
+      text-shadow: 0 0 20px #FFD70066, 0 0 40px #FFD70022;
+      pointer-events: none;
+      z-index: 55;
+      animation: payoutPopIn 2.5s ease-out forwards;
+    }
+    @keyframes payoutPopIn {
+      0%   { opacity: 0; transform: translateX(-50%) scale(0.5); }
+      15%  { opacity: 1; transform: translateX(-50%) scale(1.1); }
+      30%  { opacity: 1; transform: translateX(-50%) scale(1.0); }
+      100% { opacity: 0; transform: translateX(-50%) translateY(-30px); }
+    }
+
+    /* Bust popup */
+    .bust-popup {
+      position: absolute;
+      top: 40%;
+      left: 50%;
+      transform: translateX(-50%);
+      font-size: 2rem;
+      font-weight: bold;
+      color: #FF3C1E;
+      letter-spacing: 6px;
+      text-shadow: 0 0 20px #FF3C1E66, 0 0 40px #FF3C1E22;
+      pointer-events: none;
+      z-index: 55;
+      animation: bustShake 2.5s ease-out forwards;
+    }
+    @keyframes bustShake {
+      0%   { opacity: 1; transform: translateX(-50%) scale(1.3); }
+      5%   { transform: translateX(calc(-50% + 8px)) scale(1.1); }
+      10%  { transform: translateX(calc(-50% - 8px)) scale(1.1); }
+      15%  { transform: translateX(calc(-50% + 4px)) scale(1.0); }
+      20%  { transform: translateX(calc(-50% - 4px)) scale(1.0); }
+      25%  { transform: translateX(-50%) scale(1.0); }
+      100% { opacity: 0; transform: translateX(-50%) scale(0.9); }
+    }
+
+    /* HUD Bankroll bar */
+    #hud-bankroll-bar {
+      position: absolute;
+      bottom: 80px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 20px;
+      background: #0a0a2099;
+      backdrop-filter: blur(4px);
+      border: 1px solid #00ffaa22;
+      font-size: 0.8rem;
+      letter-spacing: 2px;
+      white-space: nowrap;
+    }
+    .hud-bar-label { color: #446; font-size: 0.65rem; margin-right: 4px; }
+    .hud-bar-sep { color: #223; }
+    #hud-bankroll { color: #ffcc00; }
+    #hud-bet { color: #00ffaa; }
+    #hud-potential-payout { color: #ff8c00; }
+
     /* Game controls */
     #game-controls {
       position: absolute;
@@ -234,6 +503,47 @@
       transform: translateX(-50%);
       display: flex;
       gap: 16px;
+    }
+
+    #lockin-btn {
+      padding: 14px 40px;
+      background: linear-gradient(135deg, #1a1a00, #2a2a00);
+      border: 2px solid #ffcc0044;
+      color: #ffcc00;
+      font-family: inherit;
+      font-size: 1.1rem;
+      letter-spacing: 3px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    #lockin-btn:hover:not(:disabled) {
+      background: linear-gradient(135deg, #2a2a00, #3a3a00);
+      border-color: #ffcc0088;
+      box-shadow: 0 0 30px #ffcc0022;
+    }
+    #lockin-btn:disabled {
+      opacity: 0.4;
+      cursor: default;
+    }
+    #lockin-btn.btn-pulse {
+      animation: lockinPulse 0.8s ease-in-out infinite;
+    }
+    @keyframes lockinPulse {
+      0%, 100% { box-shadow: 0 0 10px #ffcc0022; border-color: #ffcc0066; }
+      50% { box-shadow: 0 0 30px #ffcc0044, 0 0 60px #ffcc0011; border-color: #ffcc00aa; }
+    }
+
+    /* Lock-in flash overlay */
+    .lockin-flash {
+      position: absolute;
+      top: 0; left: 0; width: 100%; height: 100%;
+      pointer-events: none;
+      z-index: 55;
+      animation: lockinFlash 0.4s ease-out forwards;
+    }
+    @keyframes lockinFlash {
+      0%   { background: rgba(255, 204, 0, 0.15); }
+      100% { background: rgba(255, 204, 0, 0); }
     }
 
     #cashout-btn {
@@ -292,6 +602,19 @@
     .result-voltage { color: #00ffaa; min-width: 60px; text-align: right; }
     .result-status { min-width: 80px; text-align: center; font-size: 0.7rem; color: #668; }
     .result-payout { color: #ffcc00; min-width: 60px; text-align: right; font-weight: bold; }
+    .result-profit { min-width: 70px; text-align: right; font-size: 0.8rem; }
+    .result-profit.profit-positive { color: #00ff88; }
+    .result-profit.profit-negative { color: #ff4444; }
+    .result-bankroll {
+      text-align: center;
+      margin-top: 16px;
+      padding-top: 12px;
+      border-top: 1px solid #00ffaa22;
+      font-size: 0.85rem;
+      color: #668;
+      letter-spacing: 3px;
+    }
+    .result-bankroll span { color: #ffcc00; font-size: 1.1rem; font-weight: bold; margin-left: 8px; }
 
     /* ═══════════════════════════════════════
        RESPONSIVE
@@ -335,11 +658,35 @@
           <div id="room-code-display">-----</div>
         </div>
         <div id="player-list"></div>
+
         <button id="ready-btn" class="lobby-btn">READY</button>
         <button id="start-btn" class="lobby-btn hidden" style="border-color:#ffcc0044;color:#ffcc00;">START GAME</button>
       </div>
 
       <div id="lobby-status"></div>
+    </div>
+  </div>
+
+  <!-- ═══════ BETTING PHASE ═══════ -->
+  <div id="betting-phase" class="hidden">
+    <div class="betting-container">
+      <div class="betting-title">PLACE YOUR BET</div>
+      <div class="betting-bankroll">
+        <span class="bankroll-label">BANKROLL</span>
+        <span id="betting-bankroll" class="bankroll-value">5,000</span>
+      </div>
+      <div id="betting-timer" class="betting-timer">20s</div>
+      <div class="betting-bet-box">
+        <span class="bet-label">BET AMOUNT</span>
+        <div class="bet-controls">
+          <button id="bet-dec-btn" class="bet-arrow-btn">&laquo;</button>
+          <span id="bet-display" class="bet-value">100</span>
+          <button id="bet-inc-btn" class="bet-arrow-btn">&raquo;</button>
+        </div>
+      </div>
+      <button id="place-bet-btn" class="lobby-btn" style="border-color:#ffcc0044;color:#ffcc00;">PLACE BET</button>
+      <div id="betting-player-list"></div>
+      <div id="betting-status" class="betting-status"></div>
     </div>
   </div>
 
@@ -349,10 +696,19 @@
     <div id="timer-display">15s</div>
     <div id="phase-indicator">SAFE ZONE</div>
     <div id="hud-player-list"></div>
+    <div id="turn-banner" class="turn-banner hidden">YOUR MOVE</div>
+    <div id="hud-bankroll-bar">
+      <span class="hud-bar-item"><span class="hud-bar-label">BANKROLL</span> <span id="hud-bankroll">5,000</span></span>
+      <span class="hud-bar-sep">|</span>
+      <span class="hud-bar-item"><span class="hud-bar-label">BET</span> <span id="hud-bet">100</span></span>
+      <span class="hud-bar-sep">|</span>
+      <span class="hud-bar-item"><span class="hud-bar-label">PAYOUT</span> <span id="hud-potential-payout">100</span></span>
+    </div>
   </div>
 
   <!-- ═══════ GAME CONTROLS ═══════ -->
   <div id="game-controls" class="hidden">
+    <button id="lockin-btn" class="hidden">LOCK IN</button>
     <button id="cashout-btn">CASH OUT</button>
   </div>
 

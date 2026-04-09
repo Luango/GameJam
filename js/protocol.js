@@ -10,6 +10,13 @@ export const MSG = Object.freeze({
   JOIN:                'join',
   PLAYERS:             'players',
   READY:               'ready',
+
+  // Betting
+  BET_PHASE:           'bet-phase',
+  BET_SUBMIT:          'bet-submit',
+  BET_CONFIRMED:       'bet-confirmed',
+
+  // Game
   GAME_START:          'game-start',
 
   // Gameplay
@@ -70,6 +77,7 @@ export const TILE = Object.freeze({
 
 export const PHASE = Object.freeze({
   LOBBY:      'lobby',
+  BETTING:    'betting',
   PLAYING:    'playing',
   RESOLUTION: 'resolution',
   ENDED:      'ended',
@@ -95,12 +103,27 @@ export const Msg = {
     return { type: MSG.READY };
   },
 
-  gameStart({ seed, board, playerOrder, config }) {
+  betPhase(playerList, timerDeadline, hostTimestamp) {
+    // playerList: [{id, name, color, bankroll, hasBet?}]
+    return { type: MSG.BET_PHASE, playerList, timerDeadline, hostTimestamp };
+  },
+
+  betSubmit(amount) {
+    return { type: MSG.BET_SUBMIT, amount };
+  },
+
+  betConfirmed(bets) {
+    // bets: { playerId: amount, ... }
+    return { type: MSG.BET_CONFIRMED, bets };
+  },
+
+  gameStart({ seed, board, playerOrder, bets, config }) {
     return {
       type: MSG.GAME_START,
       seed,
       board,        // { tiles, startTiles, zoneRings }
-      playerOrder,  // [{id, name, color, startTileId}]
+      playerOrder,  // [{id, name, color, startTileId, bankroll}]
+      bets,         // { playerId: amount }
       config,       // { turnTimerMs, voltageRates, trapDensity }
     };
   },

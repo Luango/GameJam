@@ -50,18 +50,18 @@ export function createTurnManager(opts) {
 
   let board = null;
   let players = {};          // id -> player object
-  let bet = 100;             // Default bet
+  let bets = {};             // playerId -> bet amount
   let pendingMoves = {};     // playerId -> { tileId, action }
   let revealedTiles = {};    // tileId -> { tileState, revealedBy, turnRevealed }
   let config = null;
 
   // ─── Public API ───
 
-  function init(boardData, playerMap, gameConfig, betAmount = 100) {
+  function init(boardData, playerMap, gameConfig, playerBets = {}) {
     board = boardData;
     players = playerMap;
     config = gameConfig;
-    bet = betAmount;
+    bets = playerBets;
     turnNumber = 0;
     pendingMoves = {};
     revealedTiles = {};
@@ -185,17 +185,17 @@ export function createTurnManager(opts) {
   }
 
   /**
-   * Timer expired — forfeit non-submitters and resolve.
+   * Timer expired — auto-cashout non-submitters and resolve.
    */
   function onTimerExpired() {
     if (state !== TURN_STATE.AWAITING) return;
 
-    // Find players who didn't submit
+    // Find players who didn't submit — auto-cashout them
     const forfeitedIds = [];
     for (const p of Object.values(players)) {
       if (isActive(p) && !pendingMoves[p.id]) {
-        // Auto-forfeit: skip this turn (player stays active but loses turn)
-        pendingMoves[p.id] = { tileId: null, action: ACTION.TIMEOUT };
+        // Auto-cashout: player didn't move, cash them out at current voltage
+        pendingMoves[p.id] = { tileId: null, action: ACTION.CASHOUT };
         forfeitedIds.push(p.id);
       }
     }
@@ -232,7 +232,8 @@ export function createTurnManager(opts) {
 
       // ── Cash Out ──
       if (move.action === ACTION.CASHOUT) {
-        cashOutPlayer(player, bet);
+        const playerBet = bets[playerId] || player.bet || 100;
+        cashOutPlayer(player, playerBet);
         results.push({
           playerId,
           action: ACTION.CASHOUT,
@@ -245,25 +246,6 @@ export function createTurnManager(opts) {
           isSimultaneousClaim: false,
           rewardClaimed: false,
           payout: player.payout,
-        });
-        continue;
-      }
-
-      // ── Timeout ──
-      if (move.action === ACTION.TIMEOUT) {
-        // Player loses this turn but stays active (first timeout = skip, could escalate)
-        results.push({
-          playerId,
-          action: ACTION.TIMEOUT,
-          tileId: null,
-          tileState: null,
-          voltageGain: 0,
-          totalVoltage: player.voltage,
-          status: player.status,
-          isResistanceApplied: false,
-          isSimultaneousClaim: false,
-          rewardClaimed: false,
-          payout: null,
         });
         continue;
       }

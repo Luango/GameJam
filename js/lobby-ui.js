@@ -3,7 +3,7 @@
 
 import * as Net from './network.js';
 import { MSG, Msg } from './protocol.js';
-import { PLAYER_COLORS } from './player.js';
+import { PLAYER_COLORS, INITIAL_BANKROLL } from './player.js';
 
 // ─── DOM References ───
 
@@ -162,8 +162,7 @@ function handleStart() {
   const { isHost } = Net.getState();
   if (!isHost || players.length < 2) return;
 
-  // Host will generate board and broadcast game-start in main.js
-  // Signal main.js via callback that start was requested
+  // Signal main.js that start was requested (triggers betting phase)
   if (onGameStart) onGameStart({ type: 'start-requested' });
 }
 
