@@ -149,3 +149,15 @@ export function pickTile(ndcPoint, camera) {
 export function resetGrid() {
   _tiles.forEach((tile, id) => setTileState(id, 'hidden'));
 }
+
+/**
+ * Returns a snapshot of all tiles for the overview map.
+ * @returns {Array<{ id, position: THREE.Vector3, zone, state }>}
+ */
+export function getAllTiles() {
+  const out = [];
+  _tiles.forEach((tile, id) => {
+    out.push({ id, position: tile.mesh.position.clone(), zone: tile.zone, state: tile.state });
+  });
+  return out;
+}

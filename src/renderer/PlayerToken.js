@@ -139,6 +139,18 @@ export function updateTokens(now) {
 }
 
 /**
+ * Returns current world positions of all live tokens (for overview map).
+ * @returns {Map<number, THREE.Vector3>}  playerId → position
+ */
+export function getTokenPositions() {
+  const out = new Map();
+  _tokens.forEach((token, id) => {
+    out.set(id, token.mesh.position.clone());
+  });
+  return out;
+}
+
+/**
  * Hot-swap token mesh from a GLB loaded by P3.
  * Preserves per-slot tint and animation state.
  * @param {number} playerId

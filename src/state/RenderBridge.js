@@ -71,6 +71,8 @@ export function emit(action, payload = {}) {
   _bus.dispatchEvent(new CustomEvent(action, { detail: payload }));
 }
 
+export function getLocalPlayerId() { return _localPlayerId; }
+
 // ─── Tile picking (wired to canvas click in main.js) ────────────────────────
 
 /**
