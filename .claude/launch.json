@@ -2,8 +2,8 @@
   "configurations": [
     {
       "name": "circuit-sphere",
-      "runtimeExecutable": "python",
-      "runtimeArgs": ["-m", "http.server", "3002"],
+      "runtimeExecutable": "npm",
+      "runtimeArgs": ["run", "dev", "--", "--port", "3002"],
       "port": 3002
     }
   ]

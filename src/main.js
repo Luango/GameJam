@@ -20,6 +20,8 @@ import { init as initBetInput, getBet }    from './hud/BetInput.js';
 import { init as initOverview, updateMap } from './hud/OverviewMap.js';
 import { init as initLobby }               from './hud/LobbyOverlay.js';
 import { init as initResults }             from './hud/ResultsOverlay.js';
+import { init as initGameStartBanner }     from './hud/GameStartBanner.js';
+import { init as initBustOverlay }         from './hud/BustOverlay.js';
 
 import {
   init as initOrchestrator,
@@ -152,6 +154,12 @@ initCashout(hudRight, { getBet });
 
 // Results overlay — mounts over everything, shown on onRoundEnd
 initResults(app);
+
+// Game-start banner — drops from top with instructions on onRoundStart
+initGameStartBanner(app);
+
+// Bust overlay — full-screen red flash when local player busts
+initBustOverlay(app);
 
 // ── Current-position label (world-to-screen) ──────────────────────────────────
 const _posLabel = document.createElement('div');
