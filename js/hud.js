@@ -4,27 +4,32 @@
 import { STATUS, ZONE } from './protocol.js';
 import { getVoltageColor, getZoneColor } from './voltage.js';
 import * as Net from './network.js';
+import * as Audio from './audio.js';
 
 // ─── DOM References ───
 
 let hudEl, voltageEl, timerEl, playerListEl, phaseEl;
-let cashoutBtn, controlsEl, resultEl;
+let cashoutBtn, lockinBtn, controlsEl, resultEl;
+let bankrollEl, betEl, potentialPayoutEl, turnBannerEl;
 
 // ─── State ───
 
 let timerInterval = null;
 let currentTimerDeadline = null;
+let lastTickSecond = -1;
 
 // ─── Callbacks ───
 
 let onCashout = null;
 let onTileSelect = null;
+let onLockIn = null;
 
 // ─── Public API ───
 
 export function init(callbacks = {}) {
   onCashout = callbacks.onCashout || null;
   onTileSelect = callbacks.onTileSelect || null;
+  onLockIn = callbacks.onLockIn || null;
 
   hudEl        = document.getElementById('hud');
   voltageEl    = document.getElementById('voltage-display');
@@ -32,12 +37,22 @@ export function init(callbacks = {}) {
   playerListEl = document.getElementById('hud-player-list');
   phaseEl      = document.getElementById('phase-indicator');
   cashoutBtn   = document.getElementById('cashout-btn');
+  lockinBtn    = document.getElementById('lockin-btn');
   controlsEl   = document.getElementById('game-controls');
   resultEl     = document.getElementById('result-screen');
+  bankrollEl   = document.getElementById('hud-bankroll');
+  betEl        = document.getElementById('hud-bet');
+  potentialPayoutEl = document.getElementById('hud-potential-payout');
+  turnBannerEl = document.getElementById('turn-banner');
 
   if (cashoutBtn) {
     cashoutBtn.addEventListener('click', () => {
       if (onCashout) onCashout();
+    });
+  }
+  if (lockinBtn) {
+    lockinBtn.addEventListener('click', () => {
+      if (onLockIn) onLockIn();
     });
   }
 }
@@ -56,10 +71,30 @@ export function hide() {
 /**
  * Update the voltage display for the local player.
  */
-export function updateVoltage(voltage) {
+export function updateVoltage(voltage, bet) {
   if (!voltageEl) return;
   voltageEl.textContent = voltage.toFixed(2) + 'x';
   voltageEl.style.color = getVoltageColor(voltage);
+
+  // Update potential payout if bet is provided
+  if (bet != null && potentialPayoutEl) {
+    const payout = Math.floor(bet * voltage);
+    potentialPayoutEl.textContent = payout.toLocaleString();
+  }
+}
+
+/**
+ * Update the bankroll display.
+ */
+export function updateBankroll(amount) {
+  if (bankrollEl) bankrollEl.textContent = amount.toLocaleString();
+}
+
+/**
+ * Update the bet display.
+ */
+export function updateBet(amount) {
+  if (betEl) betEl.textContent = amount.toLocaleString();
 }
 
 /**
@@ -70,7 +105,14 @@ export function updateVoltage(voltage) {
 export function startTimer(deadline, hostTimestamp) {
   stopTimer();
   currentTimerDeadline = deadline;
+  lastTickSecond = -1;
   const offset = Net.getClockOffset();
+
+  // Phase start flash
+  if (hudEl) {
+    hudEl.classList.add('phase-flash');
+    setTimeout(() => hudEl.classList.remove('phase-flash'), 600);
+  }
 
   timerInterval = setInterval(() => {
     const localNow = Date.now();
@@ -81,22 +123,38 @@ export function startTimer(deadline, hostTimestamp) {
     if (timerEl) {
       timerEl.textContent = seconds + 's';
 
-      // Color based on urgency
+      // Color + urgency
       if (seconds <= 3) {
         timerEl.style.color = '#FF3C1E';
         timerEl.classList.add('timer-urgent');
-      } else if (seconds <= 7) {
+        timerEl.classList.remove('timer-warning');
+      } else if (seconds <= 5) {
         timerEl.style.color = '#FF8C00';
         timerEl.classList.remove('timer-urgent');
+        timerEl.classList.add('timer-warning');
       } else {
         timerEl.style.color = '#00FFAA';
         timerEl.classList.remove('timer-urgent');
+        timerEl.classList.remove('timer-warning');
+      }
+    }
+
+    // Audio feedback per second
+    if (seconds !== lastTickSecond && seconds > 0) {
+      lastTickSecond = seconds;
+      if (seconds <= 3) {
+        Audio.playUrgent();
+      } else if (seconds <= 5) {
+        Audio.playWarning();
+      } else {
+        Audio.playTick();
       }
     }
 
     if (remaining <= 0) {
       stopTimer();
       if (timerEl) timerEl.textContent = '0s';
+      Audio.playTimeUp();
     }
   }, 100);
 }
@@ -158,16 +216,75 @@ export function showLockedIn() {
   if (cashoutBtn) {
     cashoutBtn.disabled = true;
     cashoutBtn.textContent = 'LOCKED IN';
+    cashoutBtn.classList.remove('btn-ready');
   }
+  if (lockinBtn) {
+    lockinBtn.disabled = true;
+    lockinBtn.textContent = 'LOCKED';
+    lockinBtn.classList.remove('btn-pulse');
+    lockinBtn.classList.add('hidden');
+  }
+
+  // Screen flash VFX
+  playLockInFlash();
+  Audio.playLockIn();
 }
 
 /**
- * Reset controls for new turn.
+ * Brief screen flash on lock-in.
+ */
+function playLockInFlash() {
+  if (!hudEl) return;
+  const flash = document.createElement('div');
+  flash.className = 'lockin-flash';
+  hudEl.appendChild(flash);
+  setTimeout(() => flash.remove(), 400);
+}
+
+/**
+ * Reset controls for new turn — show "YOUR MOVE" banner and pulse button.
  */
 export function resetControls() {
   if (cashoutBtn) {
     cashoutBtn.disabled = false;
     cashoutBtn.textContent = 'CASH OUT';
+    cashoutBtn.classList.add('btn-ready');
+  }
+  if (lockinBtn) {
+    lockinBtn.classList.add('hidden');
+    lockinBtn.disabled = false;
+    lockinBtn.textContent = 'LOCK IN';
+    lockinBtn.classList.remove('btn-pulse');
+  }
+
+  // Show "YOUR MOVE" banner
+  if (turnBannerEl) {
+    turnBannerEl.classList.remove('hidden');
+    const clone = turnBannerEl.cloneNode(true);
+    turnBannerEl.parentNode.replaceChild(clone, turnBannerEl);
+    turnBannerEl = clone;
+    setTimeout(() => {
+      turnBannerEl.classList.add('hidden');
+    }, 1200);
+  }
+
+  Audio.playTurnStart();
+}
+
+/**
+ * Show that a tile has been selected (not yet locked).
+ * Reveals the LOCK IN button with a pulse.
+ */
+export function showTileSelected() {
+  if (lockinBtn) {
+    lockinBtn.classList.remove('hidden');
+    lockinBtn.classList.add('btn-pulse');
+    lockinBtn.disabled = false;
+    lockinBtn.textContent = 'LOCK IN';
+  }
+  // Hide the ready pulse on cashout since player picked a tile
+  if (cashoutBtn) {
+    cashoutBtn.classList.remove('btn-ready');
   }
 }
 
@@ -178,15 +295,21 @@ export function disableControls() {
   if (cashoutBtn) {
     cashoutBtn.disabled = true;
     cashoutBtn.textContent = 'SPECTATING';
+    cashoutBtn.classList.remove('btn-ready');
+  }
+  if (lockinBtn) {
+    lockinBtn.classList.add('hidden');
+    lockinBtn.classList.remove('btn-pulse');
   }
 }
 
 /**
- * Show round end results.
- * @param {Array} results - [{id, name, color, finalVoltage, status, payout, rank}]
+ * Show round end results with per-player bets.
+ * @param {Array} results - [{id, name, color, finalVoltage, status, payout, bet, bankroll}]
  * @param {Array} leaderboard - [{id, name, payout, rank}]
+ * @param {string} localPlayerId - ID of the local player
  */
-export function showResults(results, leaderboard) {
+export function showResults(results, leaderboard, localPlayerId) {
   if (!resultEl) return;
   resultEl.classList.remove('hidden');
 
@@ -195,9 +318,13 @@ export function showResults(results, leaderboard) {
   for (const entry of leaderboard) {
     const r = results.find(x => x.id === entry.id);
     if (!r) continue;
+    const playerBet = r.bet || 100;
     const statusLabel = r.status === STATUS.CASHED_OUT ? 'CASHED OUT' :
                         r.status === STATUS.BUSTED ? 'BUSTED' : 'FORFEITED';
-    const payoutText = r.payout > 0 ? `$${r.payout.toFixed(2)}` : '$0';
+    const payoutText = r.payout > 0 ? `${Math.floor(r.payout).toLocaleString()}` : '0';
+    const profit = r.payout > 0 ? Math.floor(r.payout) - playerBet : -playerBet;
+    const profitClass = profit > 0 ? 'profit-positive' : profit < 0 ? 'profit-negative' : '';
+    const profitText = profit >= 0 ? `+${profit.toLocaleString()}` : profit.toLocaleString();
 
     html += `
       <div class="result-entry ${r.status}">
@@ -207,16 +334,64 @@ export function showResults(results, leaderboard) {
         <span class="result-voltage">${r.finalVoltage.toFixed(2)}x</span>
         <span class="result-status">${statusLabel}</span>
         <span class="result-payout">${payoutText}</span>
+        <span class="result-profit ${profitClass}">${profitText}</span>
       </div>
     `;
   }
 
   html += '</div>';
+
+  // Show local player's updated bankroll
+  const localResult = results.find(r => r.id === localPlayerId);
+  if (localResult && localResult.bankroll != null) {
+    html += `<div class="result-bankroll">BANKROLL: <span>${Math.floor(localResult.bankroll).toLocaleString()}</span></div>`;
+  }
+
   resultEl.innerHTML = html;
 }
 
 export function hideResults() {
   if (resultEl) resultEl.classList.add('hidden');
+}
+
+/**
+ * Show floating voltage gain notification.
+ * @param {number} gain - Voltage gained this step
+ * @param {string} tileState - 'safe' | 'reward'
+ */
+export function showVoltageGain(gain, tileState) {
+  if (!hudEl) return;
+  const el = document.createElement('div');
+  el.className = 'voltage-gain-popup';
+  if (tileState === 'reward') el.classList.add('reward-gain');
+  el.textContent = `+${gain.toFixed(2)}x`;
+  hudEl.appendChild(el);
+  setTimeout(() => el.remove(), 1500);
+}
+
+/**
+ * Show payout notification when player cashes out.
+ * @param {number} payout - Amount won
+ */
+export function showPayoutNotification(payout) {
+  if (!hudEl) return;
+  const el = document.createElement('div');
+  el.className = 'payout-popup';
+  el.textContent = `CASHED OUT: ${Math.floor(payout).toLocaleString()}`;
+  hudEl.appendChild(el);
+  setTimeout(() => el.remove(), 2500);
+}
+
+/**
+ * Show bust notification.
+ */
+export function showBustNotification() {
+  if (!hudEl) return;
+  const el = document.createElement('div');
+  el.className = 'bust-popup';
+  el.textContent = 'BUSTED!';
+  hudEl.appendChild(el);
+  setTimeout(() => el.remove(), 2500);
 }
 
 // ─── Internal ───

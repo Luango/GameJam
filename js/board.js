@@ -23,12 +23,13 @@ export const DEFAULT_CONFIG = {
   sphereRadius: 6,
   subdivisions: 3,
   turnTimerMs: 15000,
-  trapDensity: { safe: 0.20, charged: 0.35, critical: 0.50 },
-  rewardDensity: { safe: 0.08, charged: 0.10, critical: 0.12 },
+  // 96% RTP (Casual) — house edge ~4% overall
+  trapDensity: { safe: 0.12, charged: 0.25, critical: 0.35 },
+  rewardDensity: { safe: 0.10, charged: 0.12, critical: 0.15 },
   voltageRates: {
-    safe:     { base: 0.1,  reward: 0.2, follower: 0.05 },
-    charged:  { base: 0.3,  reward: 0.5, follower: 0.15 },
-    critical: { base: 0.8,  reward: 1.5, follower: 0.40 },
+    safe:     { base: 0.12, reward: 0.25, follower: 0.06 },
+    charged:  { base: 0.30, reward: 0.55, follower: 0.15 },
+    critical: { base: 0.70, reward: 1.30, follower: 0.35 },
   },
   // Zone boundaries (latitude angle from equator, in radians)
   // Safe:     |lat| <= 0.4    (~23 degrees from equator)

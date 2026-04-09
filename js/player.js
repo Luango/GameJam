@@ -14,12 +14,18 @@ export const PLAYER_COLORS = [
 /**
  * Create a new player object.
  */
+export const INITIAL_BANKROLL = 5000;
+
 export function createPlayer(id, name, colorIndex = 0) {
   return {
     id,
     name,
     color: PLAYER_COLORS[colorIndex % PLAYER_COLORS.length],
     ready: false,
+
+    // Bankroll & betting
+    bankroll: INITIAL_BANKROLL,
+    bet: 0,                // Set during betting phase
 
     // Game state (set after game-start)
     status: STATUS.ACTIVE,
@@ -117,6 +123,7 @@ export function serializePlayer(player) {
     id: player.id,
     name: player.name,
     color: player.color,
+    bankroll: player.bankroll,
     status: player.status,
     path: [...player.path],
     currentTileId: player.currentTileId,
@@ -134,5 +141,6 @@ export function lobbyView(player) {
     name: player.name,
     ready: player.ready,
     color: player.color,
+    bankroll: player.bankroll,
   };
 }
