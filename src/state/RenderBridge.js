@@ -22,8 +22,11 @@ const _callbacks = {
   onRoundEnd: [], onRoundStart: [], onTimerSync: [],
 };
 
-// Last known tile per player
+// Last known tile per player (keyed by playerId string in P1 mode, number in dev mode)
 const _lastTile = new Map();
+
+// P1 mode: maps string playerId → slot index (0-3) for token/path colour
+const _playerSlots = new Map();
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 
@@ -189,4 +192,159 @@ function _pickStartTile(safeTiles, seed, playerIndex, playerCount) {
   if (!safeTiles.length) return playerIndex * 20; // fallback
   const spread = Math.floor(safeTiles.length / playerCount);
   return safeTiles[(seed + playerIndex * spread) % safeTiles.length];
+}
+
+// ─── Direct P1 Integration Methods ───────────────────────────────────────────
+// Called by GameOrchestrator when real network messages arrive.
+// These bypass the dev event bus and drive the same underlying renderer state.
+
+/**
+ * Called by GameOrchestrator once the board is built and game starts.
+ * @param {Array<{id:string, name:string, color:string, startTileId:number}>} playerOrder
+ * @param {string} localId  — this client's PeerJS/player ID
+ */
+export function handleP1RoundStart(playerOrder, localId) {
+  _localPlayerId = localId;
+  _playerCount   = playerOrder.length;
+  _roundActive   = true;
+  _localBusted   = false;
+  _lastTile.clear();
+  _playerSlots.clear();
+
+  resetGrid();
+  clearAllPaths();
+  clearAllTokens();
+
+  // Assign slots and spawn tokens
+  playerOrder.forEach((p, slot) => {
+    _playerSlots.set(p.id, slot);
+    _lastTile.set(p.id, p.startTileId);
+    spawnToken(slot, p.startTileId);
+  });
+
+  // Focus on local player's starting position
+  const localSlot = _playerSlots.get(localId) ?? 0;
+  const localEntry = playerOrder.find((p) => p.id === localId);
+  if (localEntry != null) {
+    focusOnPosition(getTilePosition(localEntry.startTileId));
+    stopAutoRotate();
+  }
+
+  // Notify HUDs — use slot index as playerId for consistent HUD map keys
+  _notify('onRoundStart', { playerCount: playerOrder.length, localPlayerId: localSlot });
+}
+
+/**
+ * Called by GameOrchestrator on MSG.TURN_BEGIN.
+ * @param {number[]} validMoves       — tile IDs the local player may step to
+ * @param {number}   timerDeadline    — Date.now() ms when the turn timer expires
+ */
+export function handleP1TurnBegin(validMoves, timerDeadline) {
+  clearSelectables();
+
+  if (!_localBusted && validMoves.length > 0) {
+    setSelectableTiles(validMoves);
+    stopAutoRotate();
+  }
+
+  // Sync the turn timer — remaining time accounts for any latency
+  _notify('onTimerSync', { remaining: Math.max(0, timerDeadline - Date.now()) });
+}
+
+/**
+ * Called by GameOrchestrator on MSG.TURN_REVEAL.
+ * @param {object[]} results            — per-player turn results from TurnManager
+ * @param {object[]} newlyRevealedTiles — [{id, tileState}]
+ */
+export function handleP1TurnReveal(results, newlyRevealedTiles) {
+  // 1. Reveal tile visuals
+  for (const t of newlyRevealedTiles) {
+    const state =
+      t.tileState === 'trap'   ? 'revealed-trap' :
+      t.tileState === 'reward' ? 'reward'         :
+                                 'revealed-safe';
+    setTileState(t.id, state);
+  }
+
+  // 2. Process per-player results — normalise playerId to slot index for HUD maps
+  for (const result of results) {
+    const { playerId, action, tileId, tileState, totalVoltage, status } = result;
+    // slot is the numeric index HUDs use; fall back to 0 in dev/mock mode where
+    // _playerSlots is empty and playerId is already a number
+    const slot = _playerSlots.size > 0
+      ? (_playerSlots.get(playerId) ?? 0)
+      : (typeof playerId === 'number' ? playerId : 0);
+
+    if (action === 'step' && tileId != null) {
+      const prev = _lastTile.get(playerId);
+      if (prev !== undefined && prev !== tileId) {
+        addPathSegment(slot, prev, tileId);
+      }
+      moveToken(slot, tileId);
+      _lastTile.set(playerId, tileId);
+
+      // Notify HUD with slot as playerId so HUD maps find the entry
+      _notify('onReveal', {
+        tileId,
+        type:     tileState === 'trap' ? 'trap' : tileState === 'reward' ? 'reward' : 'safe',
+        playerId: slot,
+        voltage:  totalVoltage,
+      });
+    }
+
+    if (status === 'busted') {
+      bustToken(slot);
+      if (playerId === _localPlayerId) {
+        _localBusted = true;
+        clearSelectables();
+        resumeAutoRotate();
+      }
+      _notify('onBust', { playerId: slot });
+    } else if (status === 'cashed_out') {
+      if (playerId === _localPlayerId) {
+        clearSelectables();
+        resumeAutoRotate();
+      }
+      _notify('onCashout', { playerId: slot, voltage: totalVoltage });
+    }
+
+    // Focus camera on local player's move
+    if (playerId === _localPlayerId && tileId != null) {
+      focusOnPosition(getTilePosition(tileId));
+    }
+  }
+
+  // Selectables are reset — GameOrchestrator restores them on next TURN_BEGIN
+  clearSelectables();
+}
+
+/**
+ * Called by GameOrchestrator on MSG.ROUND_END.
+ * @param {object[]} results    — final per-player results
+ * @param {object[]} leaderboard
+ */
+export function handleP1RoundEnd(results, leaderboard) {
+  _roundActive = false;
+  clearSelectables();
+  resumeAutoRotate();
+
+  // Normalise P1 result shape → HUD-expected shape
+  // P1:  { id, name, color, finalVoltage, status:'busted'|'cashed_out'|'forfeited', payout }
+  // HUD: { playerId (slot), name, voltage, status:'active'|'bust'|'cashout', payout }
+  const STATUS_MAP = { busted: 'bust', cashed_out: 'cashout', forfeited: 'bust', active: 'active' };
+
+  const normResults = (results ?? []).map((r) => {
+    const slot = _playerSlots.size > 0
+      ? (_playerSlots.get(r.id) ?? 0)
+      : (typeof r.id === 'number' ? r.id : 0);
+    return {
+      playerId: slot,
+      name:     r.name ?? `P${slot}`,
+      voltage:  r.finalVoltage ?? r.voltage ?? 1.0,
+      status:   STATUS_MAP[r.status] ?? r.status ?? 'bust',
+      payout:   r.payout ?? 0,
+    };
+  });
+
+  _notify('onRoundEnd', { results: normResults, leaderboard });
 }

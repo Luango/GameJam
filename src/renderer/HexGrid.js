@@ -7,10 +7,13 @@ import { initMaterials, getMaterial, applyState } from './TileMaterials.js';
 // Only RenderBridge.js drives state changes via setTileState().
 
 const SPHERE_RADIUS = 1.0;
-const TILE_RADIUS = 0.065; // visual size of each hex face
+const TILE_RADIUS = 0.065; // visual size of each hex face (Fibonacci mode)
 
 let _scene = null;
-const _tiles = new Map(); // tileId → { mesh, zone, state, animData }
+const _tiles = new Map(); // tileId → { mesh, zone, state, animData, center?, tileRadius? }
+
+// P1 board reference — set by buildFromBoard, null in standalone/dev mode
+let _p1Board = null;
 
 // ── Selectable tile overlay rings ─────────────────────────────────────────────
 const _rings = new Map(); // tileId → THREE.Mesh ring
@@ -46,7 +49,73 @@ function _getZone(v) {
 }
 
 /**
+ * Build tile meshes from P1 board data (replaces buildGrid for networked games).
+ * Tile IDs are identical to P1's board.tiles indices — required for network messages.
+ * @param {object} board  — P1 board: { tiles, startTiles, zoneRings }
+ * @param {THREE.Scene} scene
+ * @param {number} [sourceRadius=6]  — P1 sphere radius to normalise from
+ */
+export function buildFromBoard(board, scene, sourceRadius = 6) {
+  _scene = scene;
+  initMaterials();
+
+  // Tear down any existing tiles (dev grid or previous round)
+  _tiles.forEach(({ mesh }) => {
+    mesh.geometry.dispose();
+    scene.remove(mesh);
+  });
+  _tiles.clear();
+  clearSelectables();
+
+  _p1Board = board;
+  const scale = SPHERE_RADIUS / sourceRadius; // 1/6
+  const SHRINK = 0.82; // gap between hex faces
+
+  for (const tile of board.tiles) {
+    const zone   = tile.zone; // 'safe'|'charged'|'critical' — matches our constants
+    const center = new THREE.Vector3(tile.center.x, tile.center.y, tile.center.z).multiplyScalar(scale);
+    const normal = center.clone().normalize();
+
+    const verts = tile.vertices.map(
+      (v) => new THREE.Vector3(v.x, v.y, v.z).multiplyScalar(scale)
+    );
+
+    // Visual size from actual vertex extent (needed for rings)
+    const tileRadius = verts.reduce((max, v) => Math.max(max, center.distanceTo(v)), 0);
+
+    // Shrink vertices toward center for gap effect (same as sphere-renderer.js)
+    const shrunk = verts.map((v) => {
+      const dir = v.clone().sub(center);
+      return center.clone().add(dir.multiplyScalar(SHRINK));
+    });
+
+    // Triangle-fan BufferGeometry (vertices already in world space; mesh stays at origin)
+    const positions = [];
+    const normals   = [];
+    for (let i = 0; i < shrunk.length; i++) {
+      const next = (i + 1) % shrunk.length;
+      positions.push(center.x, center.y, center.z);
+      positions.push(shrunk[i].x, shrunk[i].y, shrunk[i].z);
+      positions.push(shrunk[next].x, shrunk[next].y, shrunk[next].z);
+      for (let j = 0; j < 3; j++) normals.push(normal.x, normal.y, normal.z);
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute('normal',   new THREE.Float32BufferAttribute(normals,   3));
+
+    const mat  = getMaterial(zone, 'hidden');
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.userData.tileId = tile.id;
+    scene.add(mesh);
+
+    _tiles.set(tile.id, { mesh, zone, state: 'hidden', animData: {}, center, tileRadius });
+  }
+}
+
+/**
  * Build the hex grid and add all tile meshes to the scene.
+ * Used in standalone / dev mode (Fibonacci sphere, no network).
  * @param {THREE.Scene} scene
  */
 export function buildGrid(scene) {
@@ -78,12 +147,15 @@ export function buildGrid(scene) {
 
 /**
  * Get the world position (on sphere surface) of a tile centre.
+ * Works for both buildGrid (mesh.position) and buildFromBoard (stored center).
  * @param {number} tileId
  * @returns {THREE.Vector3}
  */
 export function getTilePosition(tileId) {
   const tile = _tiles.get(tileId);
-  return tile ? tile.mesh.position.clone() : new THREE.Vector3();
+  if (!tile) return new THREE.Vector3();
+  // buildFromBoard tiles store an explicit center; buildGrid tiles use mesh.position
+  return tile.center ? tile.center.clone() : tile.mesh.position.clone();
 }
 
 /**
@@ -165,7 +237,8 @@ export function pickTile(ndcPoint, camera) {
 }
 
 /**
- * Reset all tiles back to hidden state (call on onRoundStart).
+ * Reset all tiles back to hidden state (call on onRoundStart / new round).
+ * Does NOT tear down geometry — call buildFromBoard again for a new board seed.
  */
 export function resetGrid() {
   clearSelectables();
@@ -175,7 +248,9 @@ export function resetGrid() {
 // ── Selectable tile rings ─────────────────────────────────────────────────────
 
 function _buildRing(tile) {
-  const geo = new THREE.RingGeometry(TILE_RADIUS * 1.1, TILE_RADIUS * 1.55, 6);
+  // Use stored tileRadius (P1 board) or fallback constant (Fibonacci grid)
+  const r  = tile.tileRadius ?? TILE_RADIUS;
+  const geo = new THREE.RingGeometry(r * 1.1, r * 1.55, tile.tileRadius ? 6 : 6);
   const mat = new THREE.MeshBasicMaterial({
     color: RING_COLOR_DEFAULT,
     side: THREE.DoubleSide,
@@ -184,7 +259,9 @@ function _buildRing(tile) {
     depthTest: false,
   });
   const ring = new THREE.Mesh(geo, mat);
-  ring.position.copy(tile.mesh.position).multiplyScalar(1.006);
+  // Use stored center for P1 tiles; mesh.position for Fibonacci tiles
+  const center = tile.center ?? tile.mesh.position;
+  ring.position.copy(center).multiplyScalar(1.006);
   ring.lookAt(0, 0, 0);
   ring.rotateX(Math.PI);
   return ring;
@@ -249,12 +326,20 @@ export function isSelectable(tileId) {
 }
 
 /**
- * Returns tile IDs that are angularly adjacent to fromTileId.
- * ~5–7 neighbours for a 200-tile Fibonacci sphere.
+ * Returns tile IDs adjacent to fromTileId.
+ * When P1 board is active: uses the authoritative adjacency graph from board.js.
+ * In Fibonacci/dev mode: falls back to angular distance filter.
  * @param {number} fromTileId
- * @param {number} [maxAngleDeg=22]
+ * @param {number} [maxAngleDeg=22]  — only used in dev/Fibonacci mode
  */
 export function getAdjacentTileIds(fromTileId, maxAngleDeg = 22) {
+  // P1 board mode — use exact adjacency from board generation
+  if (_p1Board) {
+    const tile = _p1Board.tiles[fromTileId];
+    return tile ? [...tile.adjacency] : [];
+  }
+
+  // Dev mode — angular distance fallback
   const tile = _tiles.get(fromTileId);
   if (!tile) return [];
   const maxAngle = THREE.MathUtils.degToRad(maxAngleDeg);

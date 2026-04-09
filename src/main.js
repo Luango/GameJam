@@ -1,18 +1,30 @@
+import * as THREE from 'three';
+
+// ── P1 board.js uses window.THREE (IcosahedronGeometry) — must be set first ──
+window.THREE = THREE;
+
 import { init, render, getScene, getCamera } from './renderer/SphereRenderer.js';
-import { buildGrid, updateTiles } from './renderer/HexGrid.js';
-import { initPathTracer } from './renderer/PathTracer.js';
+import { buildGrid, updateTiles }             from './renderer/HexGrid.js';
+import { initPathTracer }                     from './renderer/PathTracer.js';
 import { initTokens, updateTokens, getTokenPositions } from './renderer/PlayerToken.js';
-import { init as initBridge, handleTilePick, handleHover, getLocalPlayerId } from './state/RenderBridge.js';
+import {
+  init as initBridge, handleTilePick, handleHover, getLocalPlayerId,
+} from './state/RenderBridge.js';
 import { initHarness } from './dev/MockEventHarness.js';
 
-import { init as initVoltage }                  from './hud/VoltageDisplay.js';
-import { init as initTimer }                    from './hud/TurnTimer.js';
-import { init as initCashout, lockIn }          from './hud/CashoutButton.js';
-import { init as initLeaderboard }              from './hud/Leaderboard.js';
-import { init as initBetInput, getBet }         from './hud/BetInput.js';
-import { init as initOverview, updateMap }      from './hud/OverviewMap.js';
+import { init as initVoltage }             from './hud/VoltageDisplay.js';
+import { init as initTimer }               from './hud/TurnTimer.js';
+import { init as initCashout, lockIn }     from './hud/CashoutButton.js';
+import { init as initLeaderboard }         from './hud/Leaderboard.js';
+import { init as initBetInput, getBet }    from './hud/BetInput.js';
+import { init as initOverview, updateMap } from './hud/OverviewMap.js';
+import { init as initLobby }               from './hud/LobbyOverlay.js';
+import { init as initResults }             from './hud/ResultsOverlay.js';
 
-import * as THREE from 'three';
+import {
+  init as initOrchestrator,
+  createRoom, joinRoom, setReady,
+} from './p1bridge/GameOrchestrator.js';
 
 const canvas = document.getElementById('canvas');
 const hud    = document.getElementById('hud');
@@ -21,7 +33,7 @@ const app    = document.getElementById('app');
 // ── Renderer ──────────────────────────────────────────────────────────────────
 const { scene, camera } = init(canvas);
 
-// ── 3D scene ──────────────────────────────────────────────────────────────────
+// ── 3D scene — Fibonacci grid shown in lobby; replaced by buildFromBoard on game start ──
 buildGrid(scene);
 initPathTracer(scene);
 initTokens(scene);
@@ -29,6 +41,33 @@ initTokens(scene);
 // ── Event bridge ──────────────────────────────────────────────────────────────
 const eventBus = new EventTarget();
 initBridge(eventBus);
+
+// ── Game Orchestrator (P1 network + game logic) ───────────────────────────────
+let _lobbyControls = null; // { hide, updatePlayers }
+
+initOrchestrator(eventBus, {
+  onGameStart: () => {
+    // Hide lobby overlay once host broadcasts game-start
+    _lobbyControls?.hide();
+  },
+  onPlayersUpdate: (players) => {
+    // Update lobby player list (client-side)
+    _lobbyControls?.updatePlayers(players);
+  },
+  onLobbyUpdate: (players, isHost, roomCode) => {
+    // Update lobby player list (host-side)
+    _lobbyControls?.updatePlayers(players);
+  },
+});
+
+// ── Lobby overlay ─────────────────────────────────────────────────────────────
+_lobbyControls = initLobby(app, {
+  onCreate: (name) => createRoom(name),
+  onJoin:   (code, name) => joinRoom(code, name),
+  onReady:  () => setReady(),
+});
+
+// ── Dev mock harness (only in dev, alongside real network) ────────────────────
 if (import.meta.env.DEV) initHarness(eventBus);
 
 // ── Canvas interaction ────────────────────────────────────────────────────────
@@ -37,7 +76,6 @@ canvas.addEventListener('pointerup', (e) => {
   handleTilePick({ x, y }, camera);
 });
 
-// Hover — throttled to ~60 fps max
 let _hoverScheduled = false;
 canvas.addEventListener('pointermove', (e) => {
   if (_hoverScheduled) return;
@@ -58,22 +96,18 @@ function _toNdc(e) {
 }
 
 // ── HUD layout ────────────────────────────────────────────────────────────────
-// Three-column grid: left panel | sphere (untouched) | right panel
-// Panels within each column stack via flexbox — no individual absolute positioning.
-
 Object.assign(hud.style, {
-  position:      'absolute',
-  inset:         '0',
-  pointerEvents: 'none',
-  display:       'grid',
+  position:            'absolute',
+  inset:               '0',
+  pointerEvents:       'none',
+  display:             'grid',
   gridTemplateColumns: '180px 1fr 220px',
   gridTemplateRows:    '1fr',
-  padding:       '14px',
-  gap:           '0',
-  boxSizing:     'border-box',
+  padding:             '14px',
+  gap:                 '0',
+  boxSizing:           'border-box',
 });
 
-/** Flex column that fills its grid cell */
 function _makeColumn(justifyContent = 'flex-start') {
   const div = document.createElement('div');
   Object.assign(div.style, {
@@ -87,9 +121,9 @@ function _makeColumn(justifyContent = 'flex-start') {
   return div;
 }
 
-const hudLeft   = _makeColumn('flex-start');  // leaderboard + voltage, bet at bottom
-const hudCenter = _makeColumn('flex-start');  // timer centered at top
-const hudRight  = _makeColumn('flex-start');  // overview + cashout at bottom
+const hudLeft   = _makeColumn('flex-start');
+const hudCenter = _makeColumn('flex-start');
+const hudRight  = _makeColumn('flex-start');
 
 hud.appendChild(hudLeft);
 hud.appendChild(hudCenter);
@@ -99,13 +133,11 @@ hud.appendChild(hudRight);
 initLeaderboard(hudLeft);
 initVoltage(hudLeft);
 
-// Timer sits at top of center column, self-centered
 const timerWrap = document.createElement('div');
 Object.assign(timerWrap.style, { display: 'flex', justifyContent: 'center', pointerEvents: 'none' });
 hudCenter.appendChild(timerWrap);
 initTimer(timerWrap, { onLock: lockIn });
 
-// Spacer pushes bet input to the bottom of left column
 const leftSpacer = document.createElement('div');
 leftSpacer.style.flex = '1';
 hudLeft.appendChild(leftSpacer);
@@ -113,11 +145,13 @@ initBetInput(hudLeft);
 
 initOverview(hudRight);
 
-// Spacer pushes cashout to the bottom of right column
 const rightSpacer = document.createElement('div');
 rightSpacer.style.flex = '1';
 hudRight.appendChild(rightSpacer);
 initCashout(hudRight, { getBet });
+
+// Results overlay — mounts over everything, shown on onRoundEnd
+initResults(app);
 
 // ── Current-position label (world-to-screen) ──────────────────────────────────
 const _posLabel = document.createElement('div');
