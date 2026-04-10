@@ -15,6 +15,16 @@ const _tiles = new Map(); // tileId → { mesh, zone, state, animData, center?, 
 // P1 board reference — set by buildFromBoard, null in standalone/dev mode
 let _p1Board = null;
 
+// ── Neon border strip meshes (permanent, one per tile) ───────────────────────
+const _borders = new Map(); // tileId → THREE.Mesh (quad-strip rim)
+const ZONE_NEON   = { safe: 0x00e5ff, charged: 0xccff00, critical: 0xff0080 };
+const REVEAL_NEON = { 'revealed-safe': 0x00ff55, 'revealed-trap': 0xff3300, reward: 0xffd700 };
+let _selectedTime = -Infinity; // performance.now() when last selection happened
+
+// ── Spark particles (local only, spawned on tile selection) ───────────────────
+const _sparks = []; // { points, velocities, posAttr, startTime }
+const SPARK_LIFE_S = 0.80;
+
 // ── Selectable tile overlay discs ─────────────────────────────────────────────
 const _rings = new Map(); // tileId → THREE.Mesh disc
 let _hoveredId  = -1;
@@ -60,6 +70,55 @@ function _getZone(v) {
 }
 
 /**
+ * Build a neon quad-strip rim mesh for a tile.
+ * Creates a flat annular strip between the tile's shrunk edge (82%) and a
+ * slightly wider rim (93%), sitting in the gap between adjacent tiles.
+ * Uses AdditiveBlending so it glows against dark backgrounds.
+ *
+ * @param {THREE.Vector3[]} verts   — original (pre-shrunk) tile vertices in world space
+ * @param {THREE.Vector3}   center  — tile center in world space
+ * @param {THREE.Vector3}   normal  — outward normal of the tile
+ * @param {'safe'|'charged'|'critical'} zone
+ */
+function _buildBorderMesh(verts, center, normal, zone) {
+  const INNER_S = 0.82; // inner edge of rim — matches tile SHRINK, sits flush with face edge
+  const OUTER_S = 0.93; // outer edge of rim — extends into the gap between tiles
+  const LIFT    = 0.002; // lift slightly above tile surface to avoid z-fighting
+
+  const positions = [];
+  const n = verts.length;
+
+  for (let i = 0; i < n; i++) {
+    const next = (i + 1) % n;
+    const d1 = verts[i].clone().sub(center);
+    const d2 = verts[next].clone().sub(center);
+
+    const i1 = center.clone().add(d1.clone().multiplyScalar(INNER_S)).addScaledVector(normal, LIFT);
+    const i2 = center.clone().add(d2.clone().multiplyScalar(INNER_S)).addScaledVector(normal, LIFT);
+    const o1 = center.clone().add(d1.clone().multiplyScalar(OUTER_S)).addScaledVector(normal, LIFT);
+    const o2 = center.clone().add(d2.clone().multiplyScalar(OUTER_S)).addScaledVector(normal, LIFT);
+
+    // Two triangles per edge segment (quad)
+    positions.push(i1.x, i1.y, i1.z,  i2.x, i2.y, i2.z,  o1.x, o1.y, o1.z);
+    positions.push(i2.x, i2.y, i2.z,  o2.x, o2.y, o2.z,  o1.x, o1.y, o1.z);
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+
+  const mat = new THREE.MeshBasicMaterial({
+    color: ZONE_NEON[zone] ?? 0x00c9a7,
+    transparent: true,
+    opacity: 0.40,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    side: THREE.DoubleSide,
+  });
+
+  return new THREE.Mesh(geo, mat);
+}
+
+/**
  * Build tile meshes from P1 board data (replaces buildGrid for networked games).
  * Tile IDs are identical to P1's board.tiles indices — required for network messages.
  * @param {object} board  — P1 board: { tiles, startTiles, zoneRings }
@@ -76,6 +135,12 @@ export function buildFromBoard(board, scene, sourceRadius = 6) {
     scene.remove(mesh);
   });
   _tiles.clear();
+  _borders.forEach((border) => {
+    border.geometry.dispose();
+    border.material.dispose();
+    scene.remove(border);
+  });
+  _borders.clear();
   clearSelectables();
 
   _p1Board = board;
@@ -119,6 +184,10 @@ export function buildFromBoard(board, scene, sourceRadius = 6) {
     const mesh = new THREE.Mesh(geo, mat);
     mesh.userData.tileId = tile.id;
     scene.add(mesh);
+
+    const border = _buildBorderMesh(verts, center, normal, zone);
+    scene.add(border);
+    _borders.set(tile.id, border);
 
     _tiles.set(tile.id, { mesh, zone, state: 'hidden', animData: {}, center, tileRadius });
   }
@@ -189,6 +258,80 @@ export function setTileState(tileId, state) {
   tile.animData = { startTime: performance.now() };
   applyState(tile.mesh.material, state);
   tile.mesh.material.needsUpdate = true;
+
+  // Swap border neon to the reveal colour so the tube matches the tile
+  const border = _borders.get(tileId);
+  if (border && REVEAL_NEON[state]) {
+    border.material.color.set(REVEAL_NEON[state]);
+  }
+}
+
+/**
+ * Spawn a brief spark burst at the selected tile (local player only).
+ * Particles spread outward along the tile's surface normal and fade out.
+ * @param {number} tileId
+ */
+export function spawnSparks(tileId) {
+  const tile = _tiles.get(tileId);
+  if (!tile || !_scene) return;
+
+  const center = tile.center ?? tile.mesh.position;
+  const normal = center.clone().normalize();
+
+  // Two tangent axes spanning the tile face plane
+  const up    = Math.abs(normal.x) < 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
+  const tang1 = new THREE.Vector3().crossVectors(normal, up).normalize();
+  const tang2 = new THREE.Vector3().crossVectors(normal, tang1).normalize();
+
+  // Two layers: sharp fast sparks + slower drifting embers
+  const FAST_COUNT  = 40;
+  const EMBER_COUNT = 20;
+  const COUNT = FAST_COUNT + EMBER_COUNT;
+  const posArr = new Float32Array(COUNT * 3);
+  const velocities = [];
+
+  for (let i = 0; i < COUNT; i++) {
+    posArr[i * 3]     = center.x;
+    posArr[i * 3 + 1] = center.y;
+    posArr[i * 3 + 2] = center.z;
+
+    const theta = Math.random() * Math.PI * 2;
+    const isEmber = i >= FAST_COUNT;
+    // Fast sparks shoot out wide; embers drift slowly in a tighter cone
+    const phi   = isEmber
+      ? Math.random() * Math.PI * 0.3
+      : Math.random() * Math.PI * 0.65;
+    const speed = isEmber
+      ? 0.002 + Math.random() * 0.004
+      : 0.007 + Math.random() * 0.013;
+
+    velocities.push(
+      new THREE.Vector3()
+        .addScaledVector(normal, Math.cos(phi))
+        .addScaledVector(tang1,  Math.sin(phi) * Math.cos(theta))
+        .addScaledVector(tang2,  Math.sin(phi) * Math.sin(theta))
+        .multiplyScalar(speed),
+    );
+  }
+
+  const geo = new THREE.BufferGeometry();
+  const posAttr = new THREE.BufferAttribute(posArr, 3);
+  posAttr.setUsage(THREE.DynamicDrawUsage);
+  geo.setAttribute('position', posAttr);
+
+  const mat = new THREE.PointsMaterial({
+    color: 0x00e5ff,
+    size: 0.022,
+    transparent: true,
+    opacity: 1.0,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    sizeAttenuation: true,
+  });
+
+  const points = new THREE.Points(geo, mat);
+  _scene.add(points);
+  _sparks.push({ points, velocities, posAttr, startTime: performance.now() });
 }
 
 /**
@@ -203,38 +346,93 @@ export function updateTiles(now) {
     const elapsed = (now - animData.startTime) / 1000; // seconds
 
     if (state === 'revealed-safe') {
-      mesh.material.emissiveIntensity = 0.4 + 0.3 * Math.sin(elapsed * 3);
+      // Gentle breathe on the green glow
+      mesh.material.emissiveIntensity = 0.75 + 0.20 * Math.sin(elapsed * 2.5);
     } else if (state === 'revealed-trap') {
+      // Quick shake on reveal, then stays sharp red
       if (elapsed < 0.4) {
         const amp = 0.005 * (1 - elapsed / 0.4);
         mesh.position.x += (Math.random() - 0.5) * amp;
         mesh.position.y += (Math.random() - 0.5) * amp;
         mesh.position.z += (Math.random() - 0.5) * amp;
+      } else {
+        mesh.material.emissiveIntensity = 0.75;
       }
     } else if (state === 'reward') {
+      // Sparkle flash on reveal, then steady golden shimmer
       mesh.material.emissiveIntensity = elapsed < 1
-        ? 1.2 * Math.exp(-elapsed * 3)
-        : 0.3;
+        ? 1.3 * Math.exp(-elapsed * 2.5)
+        : 0.8 + 0.45 * Math.abs(Math.sin(elapsed * 4));
     }
   });
 
-  // Animate selectable discs
+  // Update spark particles
+  for (let i = _sparks.length - 1; i >= 0; i--) {
+    const spark = _sparks[i];
+    const age = (now - spark.startTime) / 1000;
+    if (age >= SPARK_LIFE_S) {
+      spark.points.geometry.dispose();
+      spark.points.material.dispose();
+      _scene.remove(spark.points);
+      _sparks.splice(i, 1);
+      continue;
+    }
+    spark.points.material.opacity = 1.0 - age / SPARK_LIFE_S;
+    const arr = spark.posAttr.array;
+    for (let j = 0; j < spark.velocities.length; j++) {
+      arr[j * 3]     += spark.velocities[j].x;
+      arr[j * 3 + 1] += spark.velocities[j].y;
+      arr[j * 3 + 2] += spark.velocities[j].z;
+    }
+    spark.posAttr.needsUpdate = true;
+  }
+
+  // Animate neon border rim strips
   const t = now / 1000;
+  _borders.forEach((border, id) => {
+    if (id === _selectedId) {
+      // Selection VFX: instant full flash, then settle to strong steady glow
+      const elapsed = (now - _selectedTime) / 1000;
+      border.material.opacity = elapsed < 0.25 ? 1.0 : 0.85;
+    } else if (id === _hoveredId && _rings.has(id)) {
+      // Hover: fast bright pulse
+      border.material.opacity = 0.72 + 0.25 * Math.sin(t * 7);
+    } else if (_rings.has(id)) {
+      // Selectable: slow looping flash — clearly signals "you can go here"
+      border.material.opacity = 0.20 + 0.60 * (0.5 + 0.5 * Math.sin(t * 3.5));
+    } else {
+      const tileData = _tiles.get(id);
+      if (tileData && tileData.state !== 'hidden') {
+        // Revealed tile — steady bright glow; reward tile gets an extra sparkle
+        if (tileData.state === 'reward') {
+          border.material.opacity = 0.60 + 0.38 * Math.abs(Math.sin(t * 5 + id * 0.7));
+        } else {
+          border.material.opacity = 0.72 + 0.18 * Math.sin(t * 1.8 + id * 0.5);
+        }
+      } else {
+        // Hidden: semi-bright ambient glow with subtle organic shimmer
+        const shimmer = Math.sin(t * 2.3 + id * 1.1) * Math.sin(t * 4.7 + id * 2.3);
+        border.material.opacity = 0.35 + 0.08 * shimmer;
+      }
+    }
+  });
+
+  // Animate selectable discs + tile face glow
   _rings.forEach((disc, id) => {
     const tile = _tiles.get(id);
     if (id === _selectedId) {
       disc.material.opacity = 0.90;
       disc.material.color.set(DISC_COLOR_SELECTED);
-      if (tile) tile.mesh.material.emissiveIntensity = 0.5;
+      if (tile) tile.mesh.material.emissiveIntensity = 1.4;
     } else if (id === _hoveredId) {
       disc.material.opacity = 0.85;
       disc.material.color.set(DISC_COLOR_HOVER);
-      if (tile) tile.mesh.material.emissiveIntensity = 0.7;
+      if (tile) tile.mesh.material.emissiveIntensity = 1.2 + 0.15 * Math.sin(t * 6);
     } else {
       disc.material.opacity = 0.35 + 0.20 * Math.sin(t * 2.5 + id * 0.8);
       disc.material.color.set(DISC_COLOR_DEFAULT);
-      // Restore emissive for non-hovered/selected tiles (only if state is 'hidden')
-      if (tile && tile.state === 'hidden') tile.mesh.material.emissiveIntensity = 0;
+      // Gentle pulse glow on the tile face — breathes in sync with the neon border flash
+      if (tile) tile.mesh.material.emissiveIntensity = 0.90 + 0.45 * (0.5 + 0.5 * Math.sin(t * 3.5));
     }
   });
 }
@@ -301,9 +499,12 @@ export function setSelectableTiles(tileIds) {
   if (cv) cv.style.cursor = tileIds.length ? 'crosshair' : 'default';
 }
 
-/** Remove all selectable discs. */
+/** Remove all selectable discs and restore tile face emissive to hidden baseline. */
 export function clearSelectables() {
-  _rings.forEach((disc) => {
+  _rings.forEach((disc, id) => {
+    // Restore tile face back to the standard hidden glow before removing the ring
+    const tile = _tiles.get(id);
+    if (tile && tile.state === 'hidden') tile.mesh.material.emissiveIntensity = 0.55;
     disc.geometry.dispose();
     disc.material.dispose();
     _scene.remove(disc);
@@ -334,6 +535,7 @@ export function setHoveredTile(tileId) {
  */
 export function setSelectedTile(tileId) {
   _selectedId = tileId;
+  _selectedTime = performance.now();
 }
 
 /**

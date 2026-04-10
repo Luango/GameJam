@@ -8,9 +8,9 @@ export const ZONE_BANDS = {
 };
 
 export const ZONE_COLORS = {
-  safe:     0x00c9a7,
-  charged:  0xf59e0b,
-  critical: 0xef4444,
+  safe:     0x22d3ee, // soft cyan (desaturated from electric)
+  charged:  0xa3e635, // soft lime-green (desaturated from acid)
+  critical: 0xdb2777, // deep pink (desaturated from neon magenta)
 };
 
 export const PLAYER_COLORS = [
