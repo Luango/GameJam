@@ -7,6 +7,7 @@ import { init, render, getScene, getCamera } from './renderer/SphereRenderer.js'
 import { buildGrid, updateTiles, setHoverCallback } from './renderer/HexGrid.js';
 import { initPathTracer }                     from './renderer/PathTracer.js';
 import { initTokens, updateTokens, getTokenPositions } from './renderer/PlayerToken.js';
+import { preloadAll as preloadModels } from './renderer/ModelLoader.js';
 import {
   init as initBridge,
   handleTilePick,
@@ -49,6 +50,7 @@ import {
   init as initOrchestrator,
   createRoom, joinRoom, setReady,
   submitBet,
+  submitModelPick,
   getLocalId,
   getPhase,
   getIsHost,
@@ -70,6 +72,9 @@ initCosmos(scene);
 buildGrid(scene);
 initPathTracer(scene);
 initTokens(scene);
+
+// ── Preload character models (non-blocking) ──────────────────────────────────
+preloadModels();
 
 // ── Event bridge ──────────────────────────────────────────────────────────────
 const eventBus = new EventTarget();
@@ -107,6 +112,9 @@ initOrchestrator(eventBus, {
     clearBettingRoster();
     _lobbyControls?.show();
   },
+  onModelClaimsUpdate: (claims, playerNames) => {
+    _lobbyControls?.updateModelClaims(claims, playerNames);
+  },
   onRematchLobby: () => {
     resetMatchVisualsForLobby();
     _resultsUI?.hide();
@@ -123,9 +131,10 @@ initOrchestrator(eventBus, {
 });
 
 _lobbyControls = initLobby(app, {
-  onCreate: (name) => createRoom(name),
-  onJoin:   (code, name) => joinRoom(code, name),
-  onReady:  () => setReady(),
+  onCreate:    (name) => createRoom(name),
+  onJoin:      (code, name) => joinRoom(code, name),
+  onReady:     () => setReady(),
+  onModelPick: (modelId) => submitModelPick(modelId),
 });
 
 if (import.meta.env.DEV) initHarness(eventBus);

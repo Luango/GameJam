@@ -4,6 +4,7 @@
 // All DOM created in JS — no new HTML needed.
 
 import { injectStyles } from './HudStyles.js';
+import { init as initCharPicker } from './CharacterPicker.js';
 
 const FONT_MONO = "'Share Tech Mono', monospace";
 const FONT_UI   = "'Rajdhani', sans-serif";
@@ -19,7 +20,7 @@ const FONT_UI   = "'Rajdhani', sans-serif";
  *   onReady()             → void
  * @returns {{ hide, show, updatePlayers, resetToEntry }}
  */
-export function init(container, { onCreate, onJoin, onReady }) {
+export function init(container, { onCreate, onJoin, onReady, onModelPick }) {
   injectStyles();
 
   const overlay = _buildOverlay();
@@ -43,6 +44,13 @@ export function init(container, { onCreate, onJoin, onReady }) {
 
   let _inLobby = false;
 
+  // ── Character Picker — mounted inside lobby section ──────────────────────
+  const charPickerMount = document.createElement('div');
+  lobbySection.insertBefore(charPickerMount, readyBtn);
+  const _charPicker = initCharPicker(charPickerMount, {
+    onPick: (modelId) => { if (onModelPick) onModelPick(modelId); },
+  });
+
   function _showStatus(msg, isError = false) {
     statusEl.textContent = msg;
     statusEl.style.color = isError ? '#ff4444' : '#94a3b8';
@@ -61,6 +69,7 @@ export function init(container, { onCreate, onJoin, onReady }) {
       actionSection.style.display = 'none';
       lobbySection.style.display  = 'flex';
       _inLobby = true;
+      _charPicker.show(null);
     } catch (err) {
       _showStatus('Failed to create room: ' + err.message, true);
       hostBtn.disabled = false;
@@ -89,6 +98,7 @@ export function init(container, { onCreate, onJoin, onReady }) {
       actionSection.style.display = 'none';
       lobbySection.style.display  = 'flex';
       _inLobby = true;
+      _charPicker.show(null);
     } catch (err) {
       _showStatus('Failed to join: ' + err.message, true);
       confirmJoin.disabled = false;
@@ -118,6 +128,7 @@ export function init(container, { onCreate, onJoin, onReady }) {
     overlay.style.transition = '';
     readyBtn.disabled = false;
     readyBtn.textContent = 'READY';
+    if (_inLobby) _charPicker.show(null);
   }
 
   /**
@@ -142,6 +153,8 @@ export function init(container, { onCreate, onJoin, onReady }) {
     readyBtn.textContent = 'READY';
     _showStatus('');
     playerListEl.innerHTML = '';
+    _charPicker.hide();
+    _charPicker.reset();
   }
 
   function updatePlayers(players) {
@@ -178,7 +191,11 @@ export function init(container, { onCreate, onJoin, onReady }) {
     });
   }
 
-  return { hide, show, updatePlayers, resetToEntry };
+  function updateModelClaims(claims, playerNames) {
+    _charPicker.updateClaims(claims, playerNames);
+  }
+
+  return { hide, show, updatePlayers, resetToEntry, updateModelClaims };
 }
 
 // ─── DOM Builder ──────────────────────────────────────────────────────────────
@@ -203,7 +220,7 @@ function _buildOverlay() {
     borderRadius: '12px',
     padding:      '36px 40px',
     minWidth:     '320px',
-    maxWidth:     '400px',
+    maxWidth:     '600px',
     width:        '90vw',
     display:      'flex',
     flexDirection:'column',

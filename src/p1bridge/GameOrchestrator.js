@@ -23,6 +23,7 @@ import {
   handleP1TurnReveal, handleP1RoundEnd,
 } from '../state/RenderBridge.js';
 import { ACTIONS } from '../constants/gameState.js';
+import { MODEL_LIST } from '../renderer/ModelLoader.js';
 
 export { PHASE };
 
@@ -44,6 +45,11 @@ let _bettingTimeout = null;
 /** Last bet-phase roster (bankroll caps for clients). */
 let _bettingRoster = [];
 
+/** Host: model claims (playerId → modelId). First-come-first-serve. */
+let _modelClaims = {};
+
+let _onModelPicksUpdate = () => {};
+
 /** Client-only: bankroll after wager deducted at GAME_START; updated on cashout at ROUND_END. */
 let _clientDisplayBankroll = INITIAL_BANKROLL;
 
@@ -58,6 +64,7 @@ let _onBettingPhaseUpdate = () => {};
 let _onBettingAbortedToLobby = () => {};
 let _onRematchLobby = () => {};
 let _onLeaveRoom = () => {};
+let _onModelClaimsUpdate = () => {};
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 
@@ -78,6 +85,7 @@ export function init(eventBus, callbacks = {}) {
   if (callbacks.onBettingAbortedToLobby) _onBettingAbortedToLobby = callbacks.onBettingAbortedToLobby;
   if (callbacks.onRematchLobby) _onRematchLobby = callbacks.onRematchLobby;
   if (callbacks.onLeaveRoom) _onLeaveRoom = callbacks.onLeaveRoom;
+  if (callbacks.onModelClaimsUpdate) _onModelClaimsUpdate = callbacks.onModelClaimsUpdate;
 
   eventBus.addEventListener(ACTIONS.MOVE_SELECTED, (e) => {
     if (_phase !== PHASE.PLAYING) return;
@@ -140,6 +148,22 @@ export function submitBet(amount) {
   return true;
 }
 
+/**
+ * Request to claim a character model (first-come-first-serve).
+ * @param {string} modelId
+ */
+export function submitModelPick(modelId) {
+  if (_phase !== PHASE.LOBBY && _phase !== PHASE.BETTING) return;
+  if (_isHost) {
+    _handleModelPickReceived(_localId, modelId);
+  } else {
+    Net.sendToHost(Msg.modelPick(modelId));
+  }
+}
+
+/** Returns the final model assignments for all players (playerId → modelId). */
+export function getModelAssignments() { return { ..._modelClaims }; }
+
 export function sendCashout() {
   if (_phase !== PHASE.PLAYING) return;
   Net.sendToHost(Msg.move(null, ACTION.CASHOUT));
@@ -175,6 +199,7 @@ export function hostStartNewGame() {
   }
   drop.forEach((id) => delete _players[id]);
 
+  _modelClaims = {};
   _matchDisplayNumber += 1;
   _broadcastPlayerList();
   Net.broadcast(Msg.newGame());
@@ -188,6 +213,7 @@ export function leaveRoom() {
   _players = {};
   _pendingBets = {};
   _bettingRoster = [];
+  _modelClaims = {};
   _clientDisplayBankroll = INITIAL_BANKROLL;
   _phase = PHASE.LOBBY;
   _isHost = false;
@@ -210,6 +236,8 @@ function _handleNetMessage(msg, fromId) {
     case MSG.READY: return _onReady(fromId);
     case MSG.BET_PHASE: return _onBetPhaseMsg(msg);
     case MSG.BET_SUBMIT: return _onBetSubmitMsg(msg, fromId);
+    case MSG.MODEL_PICK: return _onModelPickMsg(msg, fromId);
+    case MSG.MODEL_PICKS: return _onModelPicksBroadcast(msg);
     case MSG.GAME_START: return _onGameStart_msg(msg);
     case MSG.TURN_BEGIN: return _onTurnBegin(msg);
     case MSG.MOVE: return _onMove(msg, fromId);
@@ -254,6 +282,7 @@ function _checkAllReady() {
 function _startBettingPhase() {
   if (!_isHost) return;
   _pendingBets = {};
+  // Keep _modelClaims — picks made during lobby carry over to betting
   _phase = PHASE.BETTING;
 
   const playerList = Object.values(_players).map((p) => ({
@@ -329,9 +358,76 @@ function _finalizeBetting() {
 function _abortBettingToLobby() {
   _phase = PHASE.LOBBY;
   _pendingBets = {};
+  _modelClaims = {};
   for (const p of Object.values(_players)) p.ready = false;
   _broadcastPlayerList();
   _onBettingAbortedToLobby();
+}
+
+// ─── Model pick handling (host) ──────────────────────────────────────────────
+
+function _onModelPickMsg(msg, fromId) {
+  if (!_isHost || (_phase !== PHASE.LOBBY && _phase !== PHASE.BETTING)) return;
+  _handleModelPickReceived(fromId, msg.modelId);
+}
+
+function _handleModelPickReceived(playerId, modelId) {
+  if (_phase !== PHASE.LOBBY && _phase !== PHASE.BETTING) return;
+  if (!MODEL_LIST.some((m) => m.id === modelId)) return; // invalid model
+
+  // Check if model already claimed by someone else
+  const currentOwner = Object.entries(_modelClaims).find(([, mid]) => mid === modelId);
+  if (currentOwner && currentOwner[0] !== playerId) return; // taken
+
+  // Remove any previous claim by this player
+  delete _modelClaims[playerId];
+  // Assign new claim
+  _modelClaims[playerId] = modelId;
+
+  _broadcastModelPicks();
+}
+
+function _broadcastModelPicks() {
+  const playerNames = {};
+  for (const p of Object.values(_players)) playerNames[p.id] = p.name;
+  Net.broadcast(Msg.modelPicks(_modelClaims));
+  _onModelClaimsUpdate(_modelClaims, playerNames);
+}
+
+function _onModelPicksBroadcast(msg) {
+  if (!msg.claims) return;
+  _modelClaims = msg.claims;
+  const playerNames = {};
+  // Pull names from players map (lobby) or betting roster (betting phase)
+  for (const p of Object.values(_players)) playerNames[p.id] = p.name;
+  for (const row of _bettingRoster) playerNames[row.id] = row.name;
+  _onModelClaimsUpdate(_modelClaims, playerNames);
+}
+
+/**
+ * Assign random models to players who didn't pick.
+ * @param {string[]} playerIds — players in the game
+ * @returns {Record<string, string>} playerId → modelId (complete map)
+ */
+function _finalizeModelAssignments(playerIds) {
+  const claimed = new Set(Object.values(_modelClaims));
+  const available = MODEL_LIST.map((m) => m.id).filter((id) => !claimed.has(id));
+
+  // Shuffle available
+  for (let i = available.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [available[i], available[j]] = [available[j], available[i]];
+  }
+
+  let idx = 0;
+  for (const pid of playerIds) {
+    if (!_modelClaims[pid]) {
+      // If we ran out of available models, wrap around
+      if (idx >= available.length) idx = 0;
+      _modelClaims[pid] = available[idx++] || MODEL_LIST[0].id;
+    }
+  }
+  return { ..._modelClaims };
 }
 
 function _wirePlayConfig(base) {
@@ -380,6 +476,9 @@ function _startGameWithBets(bets) {
   });
   _turnManager.init(_board, _players, playConfig, bets);
 
+  // Finalize model assignments (random for unclaimed)
+  const modelAssignments = _finalizeModelAssignments(bettingIds);
+
   const wireConfig = _wirePlayConfig(playConfig);
   Net.broadcast(Msg.gameStart({
     seed,
@@ -387,6 +486,7 @@ function _startGameWithBets(bets) {
     playerOrder,
     bets,
     config: wireConfig,
+    modelAssignments,
   }));
 
   // Host: onMessage runs synchronously here → _onGameStart_msg sets _phase PLAYING + renderer.
@@ -431,7 +531,10 @@ function _onGameStart_msg(msg) {
     if (me && typeof me.bankroll === 'number') _clientDisplayBankroll = me.bankroll;
   }
 
-  handleP1RoundStart(msg.playerOrder, _localId, bets);
+  // Store model assignments from host so all clients use same models
+  if (msg.modelAssignments) _modelClaims = msg.modelAssignments;
+
+  handleP1RoundStart(msg.playerOrder, _localId, bets, msg.modelAssignments || {});
 
   _onGameStart();
 }

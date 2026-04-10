@@ -6,7 +6,7 @@ import {
   setHoveredTile, setSelectedTile, isSelectable,
   getAdjacentTileIds, getTileIdsByZone, getTilePosition,
 } from '../renderer/HexGrid.js';
-import { spawnToken, moveToken, bustToken, clearAllTokens } from '../renderer/PlayerToken.js';
+import { spawnToken, moveToken, bustToken, clearAllTokens, setPlayerModel, clearModelAssignments } from '../renderer/PlayerToken.js';
 import { addPathSegment, clearAllPaths } from '../renderer/PathTracer.js';
 import { focusOnPosition, stopAutoRotate, resumeAutoRotate } from '../renderer/SphereRenderer.js';
 
@@ -229,7 +229,7 @@ function _pickStartTile(safeTiles, seed, playerIndex, playerCount) {
  * @param {string} localId  — this client's PeerJS/player ID
  * @param {Record<string, number>} [bets]  — peerId → wager (authoritative for HUD)
  */
-export function handleP1RoundStart(playerOrder, localId, bets = {}) {
+export function handleP1RoundStart(playerOrder, localId, bets = {}, modelAssignments = {}) {
   _localPlayerId = localId;
   _playerCount   = playerOrder.length;
   _roundActive   = true;
@@ -239,11 +239,19 @@ export function handleP1RoundStart(playerOrder, localId, bets = {}) {
   resetGrid();
   clearAllPaths();
   clearAllTokens();
+  clearModelAssignments();
   _lastTile.clear(); // clear AFTER renderer reset, BEFORE spawning
+
+  // Apply model assignments: map playerId → slot, then set model per slot
+  playerOrder.forEach((p, slot) => {
+    _playerSlots.set(p.id, slot);
+    if (modelAssignments[p.id]) {
+      setPlayerModel(slot, modelAssignments[p.id]);
+    }
+  });
 
   // Assign slots and spawn tokens
   playerOrder.forEach((p, slot) => {
-    _playerSlots.set(p.id, slot);
     _lastTile.set(p.id, p.startTileId);
     spawnToken(slot, p.startTileId);
   });

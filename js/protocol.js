@@ -33,6 +33,10 @@ export const MSG = Object.freeze({
   /** Host: return to lobby for another match (same room). */
   NEW_GAME:            'new-game',
 
+  // Character model picks
+  MODEL_PICK:          'model-pick',
+  MODEL_PICKS:         'model-picks',
+
   // Connection
   HEARTBEAT:           'heartbeat',
   REJOIN:              'rejoin',
@@ -119,14 +123,24 @@ export const Msg = {
     return { type: MSG.BET_CONFIRMED, bets };
   },
 
-  gameStart({ seed, board, playerOrder, bets, config }) {
+  modelPick(modelId) {
+    return { type: MSG.MODEL_PICK, modelId };
+  },
+
+  modelPicks(claims) {
+    // claims: { playerId: modelId, ... }
+    return { type: MSG.MODEL_PICKS, claims };
+  },
+
+  gameStart({ seed, board, playerOrder, bets, config, modelAssignments }) {
     return {
       type: MSG.GAME_START,
       seed,
-      board,        // { tiles, startTiles, zoneRings }
-      playerOrder,  // [{id, name, color, startTileId, bankroll}]
-      bets,         // { playerId: amount }
-      config,       // { turnTimerMs, voltageRates, trapDensity }
+      board,              // { tiles, startTiles, zoneRings }
+      playerOrder,        // [{id, name, color, startTileId, bankroll}]
+      bets,               // { playerId: amount }
+      config,             // { turnTimerMs, voltageRates, trapDensity }
+      modelAssignments,   // { playerId: modelId }
     };
   },
 
