@@ -15,8 +15,10 @@ import {
   handleHover,
   getLocalHudSlot,
   on,
+  emit,
   resetMatchVisualsForLobby,
 } from './state/RenderBridge.js';
+import { ACTIONS } from './constants/gameState.js';
 import { initHarness } from './dev/MockEventHarness.js';
 import { startMusic } from './audio/AudioManager.js';
 import { initCosmos, updateCosmos } from './renderer/CosmosBackground.js';
@@ -381,8 +383,73 @@ on('onCashout', ({ playerId }) => {
     _idleStreak = 0;
     idleBarWrap.style.opacity = '0';
     _updateIdleBar();
+    _hideStayButton();
   }
 });
+
+// ── Stay button — voluntarily idle this turn (costs 1 idle strike).
+// Only shown when idleStrikes < 2 (more than 1 stay remaining, safe to use).
+const stayBtn = document.createElement('button');
+stayBtn.id = 'cs-stay-btn';
+stayBtn.textContent = 'STAY THIS TURN';
+Object.assign(stayBtn.style, {
+  position:       'fixed',
+  top:            '210px',
+  left:           '50%',
+  transform:      'translateX(-50%)',
+  display:        'none',
+  fontFamily:     "'Rajdhani', sans-serif",
+  fontSize:       '13px',
+  fontWeight:     '700',
+  letterSpacing:  '0.14em',
+  textTransform:  'uppercase',
+  color:          '#94a3b8',
+  background:     'rgba(6,14,28,0.88)',
+  backdropFilter: 'blur(10px)',
+  border:         '1px solid rgba(255,255,255,0.15)',
+  borderRadius:   '7px',
+  padding:        '7px 18px',
+  cursor:         'pointer',
+  zIndex:         '340',
+  transition:     'color 0.2s, border-color 0.2s, background 0.2s',
+  whiteSpace:     'nowrap',
+});
+stayBtn.addEventListener('pointerenter', () => {
+  stayBtn.style.color = '#e2e8f0';
+  stayBtn.style.borderColor = 'rgba(255,255,255,0.35)';
+  stayBtn.style.background = 'rgba(15,25,45,0.96)';
+});
+stayBtn.addEventListener('pointerleave', () => {
+  stayBtn.style.color = '#94a3b8';
+  stayBtn.style.borderColor = 'rgba(255,255,255,0.15)';
+  stayBtn.style.background = 'rgba(6,14,28,0.88)';
+});
+stayBtn.addEventListener('click', () => {
+  _hideStayButton();
+  emit(ACTIONS.STAY_TURN);
+});
+app.appendChild(stayBtn);
+
+let _stayBtnActive = false;
+
+function _showStayButton() {
+  if (_idleStreak >= 2) return;
+  _stayBtnActive = true;
+  stayBtn.style.display = 'block';
+}
+
+function _hideStayButton() {
+  _stayBtnActive = false;
+  stayBtn.style.display = 'none';
+}
+
+on('onRoundStart',    ()             => { _hideStayButton(); });
+on('onBust',         ({ playerId }) => { if (playerId === getLocalHudSlot()) _hideStayButton(); });
+on('onRoundEnd',     ()             => { _hideStayButton(); });
+on('onLocalMoveTurn',()             => { _showStayButton(); });
+on('onReveal',       ({ playerId }) => { if (playerId === getLocalHudSlot()) _hideStayButton(); });
+// Timeout processed for local player — turn is over; re-shown by onLocalMoveTurn next turn
+on('onIdleStrikes',  ()             => { _hideStayButton(); });
 
 // Tile hover info panel
 const ZONE_INFO = {

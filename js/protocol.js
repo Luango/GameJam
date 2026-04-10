@@ -52,6 +52,7 @@ export const ACTION = Object.freeze({
   STEP:    'step',
   CASHOUT: 'cashout',
   TIMEOUT: 'timeout',
+  STAY:    'stay',
 });
 
 // ─── Player Status ───
