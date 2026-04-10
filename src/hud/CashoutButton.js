@@ -1,5 +1,5 @@
 import { injectStyles } from './HudStyles.js';
-import { on, emit, getLocalPlayerId } from '../state/RenderBridge.js';
+import { on, emit, getLocalHudSlot } from '../state/RenderBridge.js';
 import { ACTIONS } from '../constants/gameState.js';
 
 // CashoutButton — bottom half of the right side panel.
@@ -24,10 +24,10 @@ export function init(container, { getBet } = {}) {
   panel.innerHTML = `
     <style>
       #cs-cashout {
-        padding: 16px 20px;
+        padding: 14px 16px;
         display: flex;
         flex-direction: column;
-        gap: 10px;
+        gap: 8px;
         min-width: 0;
       }
 
@@ -50,7 +50,7 @@ export function init(container, { getBet } = {}) {
 
       #cs-win-amount {
         font-family: 'Rajdhani', sans-serif;
-        font-size: 26px;
+        font-size: 22px;
         font-weight: 700;
         color: #fbbf24;
         text-shadow: 0 0 12px #fbbf2455;
@@ -69,11 +69,11 @@ export function init(container, { getBet } = {}) {
 
       #cs-btn-cashout {
         width: 100%;
-        padding: 13px 0;
+        padding: 10px 0;
         border: none;
         border-radius: 7px;
         font-family: 'Rajdhani', sans-serif;
-        font-size: 20px;
+        font-size: 17px;
         font-weight: 700;
         letter-spacing: 0.12em;
         text-transform: uppercase;
@@ -141,14 +141,14 @@ export function init(container, { getBet } = {}) {
   });
 
   on('onReveal', ({ playerId, voltage }) => {
-    if (playerId === getLocalPlayerId()) {
+    if (playerId === getLocalHudSlot()) {
       _voltage = voltage;
       _updateWin(getBet?.());
     }
   });
 
-  on('onBust',    ({ playerId }) => { if (playerId === getLocalPlayerId()) setActive(false); });
-  on('onCashout', ({ playerId }) => { if (playerId === getLocalPlayerId()) setActive(false); });
+  on('onBust',    ({ playerId }) => { if (playerId === getLocalHudSlot()) setActive(false); });
+  on('onCashout', ({ playerId }) => { if (playerId === getLocalHudSlot()) setActive(false); });
 
   on('onRoundEnd', () => {
     setActive(false);

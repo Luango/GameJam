@@ -30,6 +30,8 @@ export const MSG = Object.freeze({
   ROUND_END:           'round-end',
   REMATCH:             'rematch',
   NEW_ROUND:           'new-round',
+  /** Host: return to lobby for another match (same room). */
+  NEW_GAME:            'new-game',
 
   // Connection
   HEARTBEAT:           'heartbeat',
@@ -182,6 +184,10 @@ export const Msg = {
 
   newRound({ seed, board, playerOrder, config }) {
     return { type: MSG.NEW_ROUND, seed, board, playerOrder, config };
+  },
+
+  newGame() {
+    return { type: MSG.NEW_GAME };
   },
 
   // ── Connection ──

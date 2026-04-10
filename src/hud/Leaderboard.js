@@ -1,5 +1,5 @@
 import { injectStyles } from './HudStyles.js';
-import { on, getLocalPlayerId } from '../state/RenderBridge.js';
+import { on, getLocalHudSlot } from '../state/RenderBridge.js';
 
 // Leaderboard — top-left panel.
 // Shows all players sorted by voltage, with bust/cashout badges.
@@ -11,6 +11,10 @@ let _players   = new Map(); // playerId → { voltage, status }
 let _listEl    = null;
 let _roundEl   = null;
 let _roundNum  = 0;
+
+/** Pre-round roster from host (PeerJS ids), cleared on round start. */
+let _bettingRoster = null;
+let _bettingLocalPeerId = null;
 
 export function init(container) {
   injectStyles();
@@ -122,6 +126,8 @@ export function init(container) {
       .lb-badge.bust-badge    { background: #7f1d1d33; color: #ef4444; }
       .lb-badge.cashout-badge { background: #0c4a6e33; color: #38bdf8; }
       .lb-badge.you-badge     { background: rgba(0,201,167,0.1); color: #00c9a7; font-size: 7px; }
+      .lb-badge.bet-wait      { background: rgba(71,85,105,0.2); color: #64748b; font-size: 7px; }
+      .lb-badge.bet-ok        { background: rgba(0,201,167,0.12); color: #00c9a7; font-size: 7px; }
 
       #cs-lb-empty {
         font-family: 'Share Tech Mono', monospace;
@@ -146,12 +152,22 @@ export function init(container) {
   _listEl  = panel.querySelector('#cs-lb-list');
   _roundEl = panel.querySelector('#cs-round-num');
 
-  on('onRoundStart', ({ playerCount }) => {
+  on('onRoundStart', ({ playerCount, players }) => {
+    _bettingRoster = null;
+    _bettingLocalPeerId = null;
     _roundNum++;
     _roundEl.textContent = `ROUND ${_roundNum}`;
     _players.clear();
-    for (let i = 0; i < playerCount; i++) {
-      _players.set(i, { voltage: 1.0, status: 'active' });
+    if (players?.length) {
+      // Named players from P1 bridge
+      players.forEach(({ playerId, name }) => {
+        _players.set(playerId, { voltage: 1.0, status: 'active', name });
+      });
+    } else {
+      // Mock harness / fallback — no names provided
+      for (let i = 0; i < playerCount; i++) {
+        _players.set(i, { voltage: 1.0, status: 'active', name: `P${i}` });
+      }
     }
     _render();
   });
@@ -175,9 +191,13 @@ export function init(container) {
   });
 
   on('onRoundEnd', ({ results }) => {
-    results?.forEach(({ playerId, voltage, status }) => {
+    results?.forEach(({ playerId, voltage, status, name }) => {
       const p = _players.get(playerId);
-      if (p) { p.voltage = voltage; p.status = status; }
+      if (p) {
+        p.voltage = voltage;
+        p.status  = status;
+        if (name) p.name = name; // keep name if result includes it
+      }
     });
     _render();
   });
@@ -191,6 +211,50 @@ export function update(results) {
   _render();
 }
 
+/**
+ * Pre-game betting phase — same panel, shows who has locked a wager.
+ * @param {Array<{id:string,name:string,color:string,hasBet?:boolean}>} playerList
+ * @param {string} localPeerId
+ */
+export function showBettingRoster(playerList, localPeerId) {
+  _bettingRoster = playerList ?? [];
+  _bettingLocalPeerId = localPeerId;
+  _roundEl.textContent = 'WAGERS';
+  _renderBetting();
+}
+
+export function updateBettingRoster(playerList) {
+  if (!_bettingRoster && !playerList) return;
+  _bettingRoster = playerList ?? [];
+  _renderBetting();
+}
+
+export function clearBettingRoster() {
+  _bettingRoster = null;
+  _bettingLocalPeerId = null;
+}
+
+function _renderBetting() {
+  if (!_listEl || !_bettingRoster) return;
+  _listEl.innerHTML = '';
+
+  _bettingRoster.forEach((p, i) => {
+    const isYou = p.id === _bettingLocalPeerId;
+    const row = document.createElement('div');
+    row.className = `lb-row ${isYou ? 'you' : ''}`;
+    const betBadge = p.hasBet
+      ? '<span class="lb-badge bet-ok">IN</span>'
+      : '<span class="lb-badge bet-wait">…</span>';
+    row.innerHTML = `
+      <span class="lb-rank">${i + 1}</span>
+      <div class="lb-dot" style="background:${p.color ?? '#94a3b8'};box-shadow:0 0 5px ${p.color ?? '#fff'}44"></div>
+      <span class="lb-name">${p.name ?? 'Player'}${isYou ? ' <span class="lb-badge you-badge">YOU</span>' : ''}</span>
+      ${betBadge}
+    `;
+    _listEl.appendChild(row);
+  });
+}
+
 function _render() {
   _listEl.innerHTML = '';
 
@@ -199,7 +263,7 @@ function _render() {
     return;
   }
 
-  const localId = getLocalPlayerId();
+  const localSlot = getLocalHudSlot();
 
   // Sort: active by voltage desc, then cashout, then bust
   const sorted = [..._players.entries()].sort(([, a], [, b]) => {
@@ -208,9 +272,9 @@ function _render() {
     return b.voltage - a.voltage;
   });
 
-  sorted.forEach(([id, { voltage, status }], rank) => {
+  sorted.forEach(([id, { voltage, status, name }], rank) => {
     const isLeader  = rank === 0 && status === 'active';
-    const isYou     = id === localId;
+    const isYou     = id === localSlot;
     const row = document.createElement('div');
     row.className = `lb-row ${isLeader ? 'leader' : ''} ${isYou ? 'you' : ''} ${status !== 'active' ? status : ''}`;
 
@@ -222,7 +286,7 @@ function _render() {
     row.innerHTML = `
       <span class="lb-rank">${rank + 1}</span>
       <div class="lb-dot" style="background:${SLOT_HEX[id] ?? '#fff'}; box-shadow: 0 0 5px ${SLOT_HEX[id] ?? '#fff'}44"></div>
-      <span class="lb-name">P${id} ${badge}</span>
+      <span class="lb-name">${name ?? `P${id}`} ${badge}</span>
       ${statusBadge || `<span class="lb-voltage">${voltage.toFixed(1)}×</span>`}
     `;
     _listEl.appendChild(row);

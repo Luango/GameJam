@@ -1,12 +1,13 @@
 import { injectStyles } from './HudStyles.js';
 import { on, emit } from '../state/RenderBridge.js';
 import { ACTIONS } from '../constants/gameState.js';
+import * as Net from '../../js/network.js';
 
 // TurnTimer — SVG countdown ring, top-center.
 // Authority: P1 sends onTimerSync every second; P2 interpolates between ticks.
 // On zero: emits LOCK_IN to P1, disables cashout.
 
-const DEFAULT_DURATION = 15;
+const DEFAULT_DURATION = 30;
 const URGENCY_THRESHOLD = 5; // seconds
 
 let _duration  = DEFAULT_DURATION;
@@ -16,12 +17,17 @@ let _lastSyncTime = 0;
 let _lastSyncRemaining = DEFAULT_DURATION;
 let _raf = null;
 
+/** Host-synchronized betting window (does not emit LOCK_IN). */
+let _bettingMode = false;
+let _bettingDeadline = 0;
+
 // External callback so CashoutButton can disable on lock
 let _onLock = null;
 
 let _ringEl    = null;
 let _textEl    = null;
 let _labelEl   = null;
+let _kindEl    = null;
 let _panelEl   = null;
 let _badgeEl   = null;
 
@@ -65,6 +71,18 @@ export function init(container, { onLock } = {}) {
         color: #00c9a7;
         border-color: rgba(0,201,167,0.4);
         background: rgba(0,201,167,0.08);
+      }
+
+      #cs-phase-badge.betting {
+        color: #38bdf8;
+        border-color: rgba(56,189,248,0.45);
+        background: rgba(56,189,248,0.08);
+      }
+
+      #cs-phase-badge.betting #cs-phase-dot {
+        background: #38bdf8;
+        box-shadow: 0 0 6px #38bdf8;
+        opacity: 1;
       }
 
       #cs-phase-badge.ended {
@@ -156,7 +174,7 @@ export function init(container, { onLock } = {}) {
     </style>
 
     <div id="cs-phase-badge"><span id="cs-phase-dot"></span>LOBBY</div>
-    <div class="t-label">Turn Timer</div>
+    <div class="t-label" id="cs-timer-kind">Turn Timer</div>
     <svg width="72" height="72" viewBox="0 0 72 72">
       <circle id="cs-timer-track" cx="36" cy="36" r="${RADIUS}" />
       <circle id="cs-timer-ring"  cx="36" cy="36" r="${RADIUS}" />
@@ -170,15 +188,25 @@ export function init(container, { onLock } = {}) {
   _ringEl   = panel.querySelector('#cs-timer-ring');
   _textEl   = panel.querySelector('#cs-timer-text');
   _labelEl  = panel.querySelector('#cs-turn-label');
+  _kindEl   = panel.querySelector('#cs-timer-kind');
   _badgeEl  = panel.querySelector('#cs-phase-badge');
 
   // RenderBridge callbacks
   on('onRoundStart', ({ timerDuration }) => {
+    stopBettingCountdown();
     _badgeEl.className = 'live';
     _badgeEl.innerHTML = '<span id="cs-phase-dot"></span>LIVE';
+    _kindEl.textContent = 'Turn Timer';
     let dur = timerDuration ?? DEFAULT_DURATION;
     if (dur > 100) dur = Math.round(dur / 1000); // convert ms → s if harness sends ms
+    _labelEl.textContent = 'Waiting…';
     start(dur);
+  });
+
+  on('onPlayTurn', ({ canStep, spectating }) => {
+    if (spectating) _labelEl.textContent = 'Spectating';
+    else if (canStep) _labelEl.textContent = 'Your Turn';
+    else _labelEl.textContent = 'Stand by';
   });
 
   on('onTimerSync', ({ remaining }) => {
@@ -186,6 +214,7 @@ export function init(container, { onLock } = {}) {
   });
 
   on('onRoundEnd', () => {
+    stopBettingCountdown();
     _running = false;
     _setDisplay(0);
     _labelEl.textContent = 'Round Over';
@@ -194,17 +223,43 @@ export function init(container, { onLock } = {}) {
   });
 }
 
+/** Top-center ring: synchronized betting countdown (host deadline + clock offset). */
+export function startBettingCountdown(deadlineMs) {
+  stopBettingCountdown();
+  const offset = Net.getClockOffset();
+  const hostNow = Date.now() + offset;
+  const totalSec = Math.max(0.5, (deadlineMs - hostNow) / 1000);
+  _duration = totalSec;
+  _bettingDeadline = deadlineMs;
+  _bettingMode = true;
+  _running = true;
+  _badgeEl.className = 'betting';
+  _badgeEl.innerHTML = '<span id="cs-phase-dot"></span>BETTING';
+  _kindEl.textContent = 'Wager window';
+  _labelEl.textContent = 'Place your bet';
+  _tick();
+}
+
+export function stopBettingCountdown() {
+  _bettingMode = false;
+  if (_raf != null) {
+    cancelAnimationFrame(_raf);
+    _raf = null;
+  }
+}
+
 export function start(duration) {
+  _bettingMode = false;
   _duration  = duration;
   _remaining = duration;
   _lastSyncTime = performance.now();
   _lastSyncRemaining = duration;
   _running   = true;
-  _labelEl.textContent = 'Your Turn';
   _tick();
 }
 
 export function sync(remaining) {
+  if (remaining > 100) remaining = remaining / 1000; // convert ms → s
   _lastSyncTime = performance.now();
   _lastSyncRemaining = remaining;
   _remaining = remaining;
@@ -213,6 +268,21 @@ export function sync(remaining) {
 
 function _tick() {
   if (!_running) return;
+
+  if (_bettingMode) {
+    const offset = Net.getClockOffset();
+    const hostNow = Date.now() + offset;
+    const remaining = Math.max(0, (_bettingDeadline - hostNow) / 1000);
+    _setDisplay(remaining);
+    if (remaining <= 0) {
+      _running = false;
+      _bettingMode = false;
+      _labelEl.textContent = 'Starting…';
+      return;
+    }
+    _raf = requestAnimationFrame(_tick);
+    return;
+  }
 
   const now = performance.now();
   const elapsed = (now - _lastSyncTime) / 1000;

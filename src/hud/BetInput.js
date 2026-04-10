@@ -12,8 +12,12 @@ let _inputEl = null;
 let _btnEl   = null;
 let _panelEl = null;
 let _infoEl  = null;
+let _submitBet = null;
+let _isBettingPhase = null;
 
-export function init(container) {
+export function init(container, options = {}) {
+  _submitBet = typeof options.submitBet === 'function' ? options.submitBet : null;
+  _isBettingPhase = typeof options.isBettingPhase === 'function' ? options.isBettingPhase : null;
   injectStyles();
 
   const panel = document.createElement('div');
@@ -22,10 +26,10 @@ export function init(container) {
   panel.innerHTML = `
     <style>
       #cs-bet {
-        padding: 16px 20px;
+        padding: 14px 16px;
         display: flex;
         flex-direction: column;
-        gap: 10px;
+        gap: 8px;
         transition: opacity 0.3s;
         min-width: 0;
       }
@@ -34,7 +38,7 @@ export function init(container) {
 
       #cs-bet .bet-title {
         font-family: 'Rajdhani', sans-serif;
-        font-size: 13px;
+        font-size: 11px;
         font-weight: 700;
         letter-spacing: 0.14em;
         text-transform: uppercase;
@@ -55,9 +59,9 @@ export function init(container) {
         border-radius: 6px;
         color: #e2e8f0;
         font-family: 'Rajdhani', sans-serif;
-        font-size: 18px;
+        font-size: 15px;
         font-weight: 600;
-        padding: 8px 12px;
+        padding: 7px 10px;
         outline: none;
         transition: border-color 0.2s, box-shadow 0.2s;
       }
@@ -78,9 +82,9 @@ export function init(container) {
 
       .bet-chip {
         font-family: 'Rajdhani', sans-serif;
-        font-size: 13px;
+        font-size: 11px;
         font-weight: 600;
-        padding: 4px 10px;
+        padding: 3px 8px;
         border-radius: 4px;
         border: 1px solid rgba(0,201,167,0.25);
         background: rgba(0,201,167,0.06);
@@ -97,11 +101,11 @@ export function init(container) {
 
       #cs-btn-bet {
         width: 100%;
-        padding: 12px 0;
+        padding: 10px 0;
         border: none;
         border-radius: 7px;
         font-family: 'Rajdhani', sans-serif;
-        font-size: 18px;
+        font-size: 15px;
         font-weight: 700;
         letter-spacing: 0.1em;
         text-transform: uppercase;
@@ -170,10 +174,22 @@ export function init(container) {
   });
 
   _btnEl.addEventListener('click', () => {
-    const amount = parseInt(_inputEl.value);
+    const amount = parseInt(_inputEl.value, 10);
     if (!amount || amount < 10) {
       _infoEl.textContent = 'Min bet is 10 CR';
       _infoEl.style.color = '#ef4444';
+      return;
+    }
+    if (_isBettingPhase?.()) {
+      if (_submitBet && _submitBet(amount)) {
+        _bet = amount;
+        _infoEl.textContent = `Wager sent: ${amount.toLocaleString()} CR`;
+        _infoEl.style.color = '#00c9a7';
+        _btnEl.disabled = true;
+      } else {
+        _infoEl.textContent = 'Invalid amount or exceeds bankroll';
+        _infoEl.style.color = '#ef4444';
+      }
       return;
     }
     _bet = amount;
@@ -183,7 +199,22 @@ export function init(container) {
     _btnEl.disabled = true;
   });
 
-  on('onRoundStart', () => lock());
+  on('onRoundStart', (p = {}) => {
+    if (p.betAmount != null && p.betAmount > 0) {
+      _bet = p.betAmount;
+      _inputEl.value = String(p.betAmount);
+      _infoEl.textContent = `Wager: ${p.betAmount.toLocaleString()} CR`;
+      _infoEl.style.color = '#94a3b8';
+    } else if (!_isBettingPhase?.()) {
+      if (!_bet || _bet < 10) {
+        _bet = 100;
+        _inputEl.value = '100';
+        _infoEl.textContent = 'Harness / local bet';
+        _infoEl.style.color = '#64748b';
+      }
+    }
+    lock();
+  });
   on('onRoundEnd', () => unlock());
 }
 
@@ -201,6 +232,17 @@ export function unlock() {
   _infoEl.textContent = 'Round starts after all players bet';
   _infoEl.style.color = '#475569';
   _bet = 0;
+}
+
+/** Unlocks panel for host-synced pre-round wagering (orchestrator BETTING phase). */
+export function enterBettingPhase() {
+  _locked = false;
+  _panelEl.classList.remove('locked');
+  _btnEl.disabled = false;
+  _inputEl.value = '';
+  _bet = 0;
+  _infoEl.textContent = 'All players must wager to play';
+  _infoEl.style.color = '#94a3b8';
 }
 
 /** Called by CashoutButton to calculate win amounts */

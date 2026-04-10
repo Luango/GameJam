@@ -37,6 +37,8 @@ export function createPlayer(id, name, colorIndex = 0) {
     // Tracking
     tilesExplored: 0,      // First-claim tiles
     deepestZone: ZONE.SAFE,
+    /** Turn timer expired without STEP/CASHOUT; 3 in one game → bust (host). */
+    idleStrikes: 0,
 
     // Connection
     connected: true,
@@ -56,6 +58,23 @@ export function resetPlayerForRound(player, startTileId) {
   player.payout = null;
   player.tilesExplored = 0;
   player.deepestZone = ZONE.SAFE;
+  player.idleStrikes = 0;
+}
+
+/**
+ * Between matches: keep id/name/color/bankroll/connection; clear table state for lobby → next bet.
+ */
+export function resetPlayerForLobby(player) {
+  player.status = STATUS.ACTIVE;
+  player.path = [];
+  player.currentTileId = null;
+  player.voltage = 1.0;
+  player.payout = null;
+  player.bet = 0;
+  player.tilesExplored = 0;
+  player.deepestZone = ZONE.SAFE;
+  player.idleStrikes = 0;
+  player.ready = false;
 }
 
 /**

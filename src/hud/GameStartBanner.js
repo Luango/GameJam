@@ -1,6 +1,6 @@
 // ─── GameStartBanner ───
-// Slides in from the top on onRoundStart with game instructions.
-// Auto-dismisses after 4 seconds. Hidden immediately on onRoundEnd.
+// Center prompt when the local player may step (TURN_BEGIN with valid moves).
+// Auto-dismisses after a few seconds. Hidden on onRoundEnd.
 
 import { on } from '../state/RenderBridge.js';
 
@@ -14,7 +14,7 @@ export function init(container) {
 
   let _hideTimer = null;
 
-  on('onRoundStart', () => {
+  on('onLocalMoveTurn', () => {
     clearTimeout(_hideTimer);
     _show(banner);
     _hideTimer = setTimeout(() => _hide(banner), AUTO_HIDE_MS);
@@ -31,13 +31,13 @@ export function init(container) {
 function _show(banner) {
   banner.style.display    = 'flex';
   banner.style.opacity    = '0';
-  banner.style.transform  = 'translateX(-50%) translateY(28px)';
+  banner.style.transform  = 'translate(-50%, -50%) translateY(22px)';
 
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       banner.style.transition  = 'opacity 0.4s ease, transform 0.4s cubic-bezier(0.34,1.56,0.64,1)';
       banner.style.opacity     = '1';
-      banner.style.transform   = 'translateX(-50%) translateY(0)';
+      banner.style.transform   = 'translate(-50%, -50%) translateY(0)';
     });
   });
 }
@@ -45,7 +45,7 @@ function _show(banner) {
 function _hide(banner) {
   banner.style.transition = 'opacity 0.35s ease, transform 0.35s ease';
   banner.style.opacity    = '0';
-  banner.style.transform  = 'translateX(-50%) translateY(16px)';
+  banner.style.transform  = 'translate(-50%, -50%) translateY(14px)';
   setTimeout(() => { banner.style.display = 'none'; }, 380);
 }
 
@@ -55,9 +55,9 @@ function _build() {
   const banner = document.createElement('div');
   Object.assign(banner.style, {
     position:        'fixed',
-    bottom:          '120px',
+    top:             '50%',
     left:            '50%',
-    transform:       'translateX(-50%) translateY(28px)',
+    transform:       'translate(-50%, -50%) translateY(22px)',
     display:         'none',
     flexDirection:   'column',
     alignItems:      'center',
@@ -80,7 +80,7 @@ function _build() {
                    box-shadow:0 0 8px #00c9a7;animation:cs-pulse 1s ease infinite;
                    flex-shrink:0"></span>
       <span style="font-family:${FONT_UI};font-size:12px;font-weight:700;letter-spacing:.2em;
-                   color:#00c9a7;text-transform:uppercase">Round Started</span>
+                   color:#00c9a7;text-transform:uppercase">Your Move</span>
       <span style="width:7px;height:7px;border-radius:50%;background:#00c9a7;
                    box-shadow:0 0 8px #00c9a7;animation:cs-pulse 1s ease infinite;
                    flex-shrink:0"></span>

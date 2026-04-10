@@ -17,7 +17,7 @@ const FONT_UI   = "'Rajdhani', sans-serif";
  *   onCreate(name)        → Promise<roomCode>
  *   onJoin(code, name)    → Promise<void>
  *   onReady()             → void
- * @returns {{ hide, updatePlayers }}
+ * @returns {{ hide, show, updatePlayers, resetToEntry }}
  */
 export function init(container, { onCreate, onJoin, onReady }) {
   injectStyles();
@@ -111,10 +111,39 @@ export function init(container, { onCreate, onJoin, onReady }) {
     setTimeout(() => { overlay.style.display = 'none'; }, 450);
   }
 
+  /** Show again (e.g. betting phase aborted — no wagers). */
+  function show() {
+    overlay.style.display    = 'flex';
+    overlay.style.opacity    = '1';
+    overlay.style.transition = '';
+    readyBtn.disabled = false;
+    readyBtn.textContent = 'READY';
+  }
+
   /**
    * Update the player list in the lobby section.
    * @param {Array<{id, name, ready, color}>} players
    */
+  /** Full reset to name / host / join (after leaving a room). */
+  function resetToEntry() {
+    _inLobby = false;
+    overlay.style.display    = 'flex';
+    overlay.style.opacity    = '1';
+    overlay.style.transition = '';
+    nameSection.style.display   = 'flex';
+    actionSection.style.display = 'flex';
+    lobbySection.style.display  = 'none';
+    hostBtn.disabled = false;
+    joinBtn.disabled = false;
+    joinBtn.style.display = 'block';
+    codeInput.parentElement.style.display = 'none';
+    confirmJoin.disabled = false;
+    readyBtn.disabled = false;
+    readyBtn.textContent = 'READY';
+    _showStatus('');
+    playerListEl.innerHTML = '';
+  }
+
   function updatePlayers(players) {
     if (!_inLobby) return;
     playerListEl.innerHTML = '';
@@ -149,7 +178,7 @@ export function init(container, { onCreate, onJoin, onReady }) {
     });
   }
 
-  return { hide, updatePlayers };
+  return { hide, show, updatePlayers, resetToEntry };
 }
 
 // ─── DOM Builder ──────────────────────────────────────────────────────────────

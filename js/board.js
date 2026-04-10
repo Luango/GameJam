@@ -22,7 +22,7 @@ export function mulberry32(seed) {
 export const DEFAULT_CONFIG = {
   sphereRadius: 6,
   subdivisions: 3,
-  turnTimerMs: 15000,
+  turnTimerMs: 30000,
   // 96% RTP (Casual) — house edge ~4% overall
   trapDensity: { safe: 0.12, charged: 0.25, critical: 0.35 },
   rewardDensity: { safe: 0.10, charged: 0.12, critical: 0.15 },

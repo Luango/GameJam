@@ -24,7 +24,7 @@ let _selectedId = -1;
 let _onHoverChange = null;
 
 const DISC_COLOR_DEFAULT  = 0x38bdf8;
-const DISC_COLOR_HOVER    = 0xffffff;
+const DISC_COLOR_HOVER    = 0x38bdf8;
 const DISC_COLOR_SELECTED = 0x00c9a7;
 
 /**
@@ -223,15 +223,15 @@ export function updateTiles(now) {
   _rings.forEach((disc, id) => {
     const tile = _tiles.get(id);
     if (id === _selectedId) {
-      disc.material.opacity = 0.55;
+      disc.material.opacity = 0.90;
       disc.material.color.set(DISC_COLOR_SELECTED);
       if (tile) tile.mesh.material.emissiveIntensity = 0.5;
     } else if (id === _hoveredId) {
-      disc.material.opacity = 0.65;
+      disc.material.opacity = 0.85;
       disc.material.color.set(DISC_COLOR_HOVER);
       if (tile) tile.mesh.material.emissiveIntensity = 0.7;
     } else {
-      disc.material.opacity = 0.15 + 0.12 * Math.sin(t * 2.5 + id * 0.8);
+      disc.material.opacity = 0.35 + 0.20 * Math.sin(t * 2.5 + id * 0.8);
       disc.material.color.set(DISC_COLOR_DEFAULT);
       // Restore emissive for non-hovered/selected tiles (only if state is 'hidden')
       if (tile && tile.state === 'hidden') tile.mesh.material.emissiveIntensity = 0;
@@ -264,9 +264,9 @@ export function resetGrid() {
 // ── Selectable tile filled discs ──────────────────────────────────────────────
 
 function _buildDisc(tile) {
-  // Filled disc sized to fit inside the tile face (0.85× tileRadius)
+  // Small circle dot centered on tile — 32 segments for smooth round look
   const r  = tile.tileRadius ?? TILE_RADIUS;
-  const geo = new THREE.CircleGeometry(r * 0.85, tile.tileRadius ? 6 : 6);
+  const geo = new THREE.CircleGeometry(r * 0.38, 32);
   const mat = new THREE.MeshBasicMaterial({
     color: DISC_COLOR_DEFAULT,
     side: THREE.DoubleSide,
