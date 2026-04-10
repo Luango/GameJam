@@ -148,6 +148,12 @@ export function createTurnManager(opts) {
       return { ok: true };
     }
 
+    if (action === ACTION.STAY) {
+      pendingMoves[playerId] = { tileId: null, action: ACTION.TIMEOUT };
+      checkAllSubmitted();
+      return { ok: true };
+    }
+
     if (action === ACTION.STEP) {
       // Validate adjacency
       if (!isAdjacent(board, player.currentTileId, tileId)) {

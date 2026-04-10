@@ -97,6 +97,11 @@ export function init(eventBus, callbacks = {}) {
     Net.sendToHost(Msg.move(null, ACTION.CASHOUT));
   });
 
+  eventBus.addEventListener(ACTIONS.STAY_TURN, () => {
+    if (_phase !== PHASE.PLAYING) return;
+    Net.sendToHost(Msg.move(null, ACTION.STAY));
+  });
+
   Net.on('onMessage', _handleNetMessage);
   Net.on('onPlayerLeave', _handlePlayerLeave);
   Net.on('onError', (err) => console.error('[Orch]', err));
