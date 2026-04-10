@@ -14,16 +14,16 @@ const _materials = {
 // Full visual override per revealed state.
 // 'hidden' is handled separately in applyState (self-illuminates with zone colour).
 const STATE_LOOK = {
-  'revealed-safe': { tileColor: 0x22c55e, emissive: 0x00ff55, intensity: 0.9,  opacity: 1.0 },
-  'revealed-trap': { tileColor: 0xff2020, emissive: 0xff0000, intensity: 0.75, opacity: 1.0 },
-  reward:          { tileColor: 0xffd700, emissive: 0xffaa00, intensity: 1.3,  opacity: 1.0 },
+  'revealed-safe': { tileColor: 0x22c55e, emissive: 0x00ff55, intensity: 0.45, opacity: 1.0 },
+  'revealed-trap': { tileColor: 0xff2020, emissive: 0xff0000, intensity: 0.35, opacity: 1.0 },
+  reward:          { tileColor: 0xffd700, emissive: 0xffaa00, intensity: 0.65, opacity: 1.0 },
 };
 
 function _makeMaterial(color) {
   return new THREE.MeshStandardMaterial({
     color,
-    roughness: 0.18,
-    metalness: 0.20,
+    roughness: 0.40,
+    metalness: 0.15,
     emissive: new THREE.Color(0x000000),
     emissiveIntensity: 0,
     transparent: true,
@@ -58,7 +58,7 @@ export function applyState(material, state) {
   if (!s) {
     // 'hidden' or unrecognised → self-illuminate with zone colour so all hidden tiles look uniform
     material.emissive.copy(material.color);
-    material.emissiveIntensity = 0.55;
+    material.emissiveIntensity = 0.30;
     material.opacity = 0.92;
   } else {
     material.color.set(s.tileColor);
