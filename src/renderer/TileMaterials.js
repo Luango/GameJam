@@ -56,10 +56,10 @@ export function getMaterial(zone, state = 'hidden') {
 export function applyState(material, state) {
   const s = STATE_LOOK[state];
   if (!s) {
-    // 'hidden' or unrecognised → self-illuminate with zone colour so all hidden tiles look uniform
+    // 'hidden' or unrecognised → very dim self-illumination so tiles read as dark/unexplored
     material.emissive.copy(material.color);
-    material.emissiveIntensity = 0.30;
-    material.opacity = 0.92;
+    material.emissiveIntensity = 0.10;
+    material.opacity = 0.82;
   } else {
     material.color.set(s.tileColor);
     material.emissive.set(s.emissive);
