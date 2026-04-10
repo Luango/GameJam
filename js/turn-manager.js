@@ -129,6 +129,62 @@ export function createTurnManager(opts) {
    * Returns { ok, reason }.
    */
   function handleMove(playerId, tileId, action) {
+    // Allow cashout during any active turn state (AWAITING, RESOLVING, REVEALING)
+    if (action === ACTION.CASHOUT && state !== TURN_STATE.IDLE) {
+      const player = players[playerId];
+      if (!player || !isActive(player)) {
+        return { ok: false, reason: 'player_not_active' };
+      }
+      if (pendingMoves[playerId]) {
+        return { ok: false, reason: 'already_submitted' };
+      }
+
+      // During AWAITING: queue normally and check if all submitted
+      if (state === TURN_STATE.AWAITING) {
+        pendingMoves[playerId] = { tileId: null, action: ACTION.CASHOUT };
+        checkAllSubmitted();
+        return { ok: true };
+      }
+
+      // During RESOLVING/REVEALING: process immediately as mid-action cashout
+      const playerBet = bets[playerId] || player.bet || 100;
+      cashOutPlayer(player, playerBet);
+      const result = {
+        playerId,
+        action: ACTION.CASHOUT,
+        tileId: null,
+        tileState: null,
+        voltageGain: 0,
+        totalVoltage: player.voltage,
+        status: player.status,
+        isResistanceApplied: false,
+        isSimultaneousClaim: false,
+        rewardClaimed: false,
+        payout: player.payout,
+        midActionCashout: true,
+      };
+
+      // Broadcast as a single-result turn reveal so clients play the cashout VFX
+      broadcast(Msg.turnReveal({
+        turnNumber,
+        results: [result],
+        newlyRevealedTiles: [],
+        boardState: {
+          totalRevealed: Object.keys(revealedTiles).length,
+          totalTrapsFound: Object.values(revealedTiles).filter(t => t.tileState === TILE.TRAP).length,
+          totalRewardsFound: Object.values(revealedTiles).filter(t => t.tileState === TILE.REWARD).length,
+        },
+      }));
+      if (onTurnReveal) onTurnReveal(Msg.turnReveal({
+        turnNumber,
+        results: [result],
+        newlyRevealedTiles: [],
+        boardState: {},
+      }));
+
+      return { ok: true };
+    }
+
     if (state !== TURN_STATE.AWAITING) {
       return { ok: false, reason: 'not_awaiting_moves' };
     }
@@ -258,6 +314,8 @@ export function createTurnManager(opts) {
           isSimultaneousClaim: false,
           rewardClaimed: false,
           payout: player.payout,
+          zone: null,
+          collisionSurge: false,
         });
         continue;
       }
@@ -281,6 +339,8 @@ export function createTurnManager(opts) {
           rewardClaimed: false,
           payout: null,
           idleStrikes: player.idleStrikes,
+          zone: null,
+          collisionSurge: false,
         });
         continue;
       }
@@ -318,10 +378,12 @@ export function createTurnManager(opts) {
           isSimultaneousClaim: isSimultaneous,
           rewardClaimed: false,
           payout: null,
+          zone: tile.zone,
+          collisionSurge: false,
         });
       } else {
         // ── Safe or Reward ──
-        const { stepMultiplier } = calculateStepVoltage(
+        const { stepMultiplier, breakdown } = calculateStepVoltage(
           tile.zone,
           tileState,
           {
@@ -359,6 +421,8 @@ export function createTurnManager(opts) {
           isSimultaneousClaim: isSimultaneous,
           rewardClaimed,
           payout: null,
+          zone: tile.zone,
+          collisionSurge: breakdown.collisionSurge > 0,
         });
       }
     }

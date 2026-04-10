@@ -146,6 +146,134 @@ export function bustToken(playerId) {
 }
 
 /**
+ * Smash Bros-style bust: red flash on token, then launch it off the sphere
+ * with a tumbling spin, shrinking to nothing. Token is removed after animation.
+ */
+export function smashBustToken(playerId) {
+  const token = _tokens.get(playerId);
+  if (!token) return;
+  token.busted = true;
+
+  const mesh = token.mesh;
+  const pos = mesh.position.clone();
+  const launchDir = pos.clone().normalize(); // outward from sphere center
+
+  // Add a random lateral kick (like Smash Bros knockback angle)
+  const right = new THREE.Vector3().crossVectors(launchDir, new THREE.Vector3(0, 1, 0)).normalize();
+  const up = new THREE.Vector3().crossVectors(right, launchDir).normalize();
+  const kickAngle = Math.random() * Math.PI * 2;
+  launchDir.addScaledVector(right, Math.sin(kickAngle) * 0.5);
+  launchDir.addScaledVector(up, Math.cos(kickAngle) * 0.5);
+  launchDir.normalize();
+
+  // Brief red flash on token before launch
+  mesh.traverse((child) => {
+    if (child.isMesh && child.material) {
+      child.material.emissive = new THREE.Color(0xff2020);
+      child.material.emissiveIntensity = 2.0;
+      child.material.transparent = true;
+    }
+  });
+
+  const startTime = performance.now();
+  const FREEZE_MS = 120;   // hitlag freeze
+  const LAUNCH_MS = 800;   // fly-off duration
+  const LAUNCH_SPEED = 0.6;
+  const SPIN_SPEED = 15;   // radians per second
+
+  // Random tumble axis
+  const tumbleAxis = new THREE.Vector3(
+    Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5
+  ).normalize();
+
+  function animate() {
+    const elapsed = performance.now() - startTime;
+
+    // Phase 1: HITLAG FREEZE — token stays frozen in place, flashing red
+    if (elapsed < FREEZE_MS) {
+      const flicker = Math.sin(elapsed * 0.08) > 0 ? 2.0 : 0.5;
+      mesh.traverse((child) => {
+        if (child.isMesh && child.material) {
+          child.material.emissiveIntensity = flicker;
+        }
+      });
+      requestAnimationFrame(animate);
+      return;
+    }
+
+    // Phase 2: LAUNCH — fly off the sphere, tumble, shrink, fade
+    const launchT = Math.min((elapsed - FREEZE_MS) / LAUNCH_MS, 1);
+    const easeOut = 1 - (1 - launchT) * (1 - launchT); // ease-out quad
+
+    // Move outward
+    const offset = launchDir.clone().multiplyScalar(easeOut * LAUNCH_SPEED);
+    mesh.position.copy(pos).add(offset);
+
+    // Tumble spin
+    mesh.rotateOnAxis(tumbleAxis, SPIN_SPEED * (1 / 60));
+
+    // Shrink + fade
+    const scale = Math.max(0, 1.0 - easeOut * 1.2);
+    mesh.scale.setScalar(scale);
+
+    const opacity = Math.max(0, 1.0 - easeOut);
+    mesh.traverse((child) => {
+      if (child.isMesh && child.material) {
+        child.material.opacity = opacity;
+        // Fade emissive from red to nothing
+        child.material.emissiveIntensity = Math.max(0, 2.0 - launchT * 3);
+      }
+    });
+
+    if (launchT < 1) {
+      requestAnimationFrame(animate);
+    } else {
+      // Done — remove from scene
+      removeToken(playerId);
+    }
+  }
+
+  requestAnimationFrame(animate);
+}
+
+/**
+ * Mark a token as cashed out (golden glow, stops float).
+ */
+export function cashOutToken(playerId) {
+  const token = _tokens.get(playerId);
+  if (!token) return;
+  token.busted = true; // reuse flag to stop float animation
+
+  // Golden glow pulse — ramp emissive up then hold
+  const GOLD = 0xffd700;
+  token.mesh.traverse((child) => {
+    if (child.isMesh && child.material) {
+      child.material.emissive = new THREE.Color(GOLD);
+      child.material.emissiveIntensity = 1.2;
+      child.material.transparent = true;
+    }
+  });
+
+  // Fade token to semi-transparent over 1.5s
+  const start = performance.now();
+  const FADE_MS = 1500;
+  function fade() {
+    const elapsed = performance.now() - start;
+    const t = Math.min(elapsed / FADE_MS, 1);
+    const opacity = 1.0 - t * 0.55; // fade to 0.45
+    const glow = 1.2 - t * 0.8;     // glow eases to 0.4
+    token.mesh.traverse((child) => {
+      if (child.isMesh && child.material) {
+        child.material.opacity = opacity;
+        child.material.emissiveIntensity = glow;
+      }
+    });
+    if (t < 1) requestAnimationFrame(fade);
+  }
+  requestAnimationFrame(fade);
+}
+
+/**
  * Remove a token from the scene.
  */
 export function removeToken(playerId) {

@@ -349,6 +349,156 @@ export function spawnSparks(tileId) {
   _sparks.push({ points, velocities, posAttr, startTime: performance.now() });
 }
 
+/**
+ * Collision Surge burst — larger, more dramatic particle explosion in electric blue.
+ * Used when 2+ players land on the same tile and survive.
+ * @param {number} tileId
+ */
+export function spawnCollisionBurst(tileId) {
+  const tile = _tiles.get(tileId);
+  if (!tile || !_scene) return;
+
+  const center = tile.center ?? tile.mesh.position;
+  const normal = center.clone().normalize();
+
+  const up    = Math.abs(normal.x) < 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
+  const tang1 = new THREE.Vector3().crossVectors(normal, up).normalize();
+  const tang2 = new THREE.Vector3().crossVectors(normal, tang1).normalize();
+
+  const FAST_COUNT  = 70;
+  const EMBER_COUNT = 35;
+  const COUNT = FAST_COUNT + EMBER_COUNT;
+  const posArr = new Float32Array(COUNT * 3);
+  const velocities = [];
+
+  for (let i = 0; i < COUNT; i++) {
+    posArr[i * 3]     = center.x;
+    posArr[i * 3 + 1] = center.y;
+    posArr[i * 3 + 2] = center.z;
+
+    const theta = Math.random() * Math.PI * 2;
+    const isEmber = i >= FAST_COUNT;
+    const phi   = isEmber
+      ? Math.random() * Math.PI * 0.35
+      : Math.random() * Math.PI * 0.75;
+    const speed = isEmber
+      ? 0.003 + Math.random() * 0.005
+      : 0.010 + Math.random() * 0.015;
+
+    velocities.push(
+      new THREE.Vector3()
+        .addScaledVector(normal, Math.cos(phi))
+        .addScaledVector(tang1,  Math.sin(phi) * Math.cos(theta))
+        .addScaledVector(tang2,  Math.sin(phi) * Math.sin(theta))
+        .multiplyScalar(speed),
+    );
+  }
+
+  const geo = new THREE.BufferGeometry();
+  const posAttr = new THREE.BufferAttribute(posArr, 3);
+  posAttr.setUsage(THREE.DynamicDrawUsage);
+  geo.setAttribute('position', posAttr);
+
+  const mat = new THREE.PointsMaterial({
+    color: 0x00ccff,
+    size: 0.030,
+    transparent: true,
+    opacity: 1.0,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    sizeAttenuation: true,
+  });
+
+  const points = new THREE.Points(geo, mat);
+  _scene.add(points);
+  _sparks.push({ points, velocities, posAttr, startTime: performance.now() });
+}
+
+/**
+ * Smash Bros-style star burst explosion — radial cross/star pattern.
+ * Sharp bright rays shoot outward from the tile center, then a ring of hot sparks expands.
+ * @param {number} tileId
+ */
+export function spawnSmashBurst(tileId) {
+  const tile = _tiles.get(tileId);
+  if (!tile || !_scene) return;
+
+  const center = tile.center ?? tile.mesh.position;
+  const normal = center.clone().normalize();
+
+  const up    = Math.abs(normal.x) < 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
+  const tang1 = new THREE.Vector3().crossVectors(normal, up).normalize();
+  const tang2 = new THREE.Vector3().crossVectors(normal, tang1).normalize();
+
+  // Star rays: 8 cardinal directions, 6 particles each = 48 rays
+  // Hot core sparks: 50 random omnidirectional
+  const RAY_COUNT = 48;
+  const CORE_COUNT = 50;
+  const COUNT = RAY_COUNT + CORE_COUNT;
+  const posArr = new Float32Array(COUNT * 3);
+  const velocities = [];
+
+  // 8-point star rays (like Smash Bros KO star)
+  for (let i = 0; i < RAY_COUNT; i++) {
+    posArr[i * 3]     = center.x;
+    posArr[i * 3 + 1] = center.y;
+    posArr[i * 3 + 2] = center.z;
+
+    const rayIndex = Math.floor(i / 6);
+    const theta = (rayIndex / 8) * Math.PI * 2;
+    // Tight cone along ray direction — gives clean star lines
+    const jitter = (Math.random() - 0.5) * 0.15;
+    const speed = 0.015 + Math.random() * 0.020;
+
+    velocities.push(
+      new THREE.Vector3()
+        .addScaledVector(normal, 0.3 + Math.random() * 0.2) // slight outward lift
+        .addScaledVector(tang1, Math.cos(theta + jitter))
+        .addScaledVector(tang2, Math.sin(theta + jitter))
+        .normalize()
+        .multiplyScalar(speed),
+    );
+  }
+
+  // Hot core explosion — fast omnidirectional sparks
+  for (let i = RAY_COUNT; i < COUNT; i++) {
+    posArr[i * 3]     = center.x;
+    posArr[i * 3 + 1] = center.y;
+    posArr[i * 3 + 2] = center.z;
+
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.random() * Math.PI * 0.8;
+    const speed = 0.008 + Math.random() * 0.018;
+
+    velocities.push(
+      new THREE.Vector3()
+        .addScaledVector(normal, Math.cos(phi))
+        .addScaledVector(tang1, Math.sin(phi) * Math.cos(theta))
+        .addScaledVector(tang2, Math.sin(phi) * Math.sin(theta))
+        .multiplyScalar(speed),
+    );
+  }
+
+  const geo = new THREE.BufferGeometry();
+  const posAttr = new THREE.BufferAttribute(posArr, 3);
+  posAttr.setUsage(THREE.DynamicDrawUsage);
+  geo.setAttribute('position', posAttr);
+
+  const mat = new THREE.PointsMaterial({
+    color: 0xff4422,
+    size: 0.035,
+    transparent: true,
+    opacity: 1.0,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    sizeAttenuation: true,
+  });
+
+  const points = new THREE.Points(geo, mat);
+  _scene.add(points);
+  _sparks.push({ points, velocities, posAttr, startTime: performance.now() });
+}
+
 // ── Tile Charging (anticipation VFX) ─────────────────────────────────────────
 
 /**

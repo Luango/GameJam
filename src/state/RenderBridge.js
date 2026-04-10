@@ -6,8 +6,9 @@ import {
   setHoveredTile, setSelectedTile, isSelectable,
   getAdjacentTileIds, getTileIdsByZone, getTilePosition,
   spawnSparks, startTileCharge, stopTileCharge, spawnShockwave,
+  spawnCollisionBurst, spawnSmashBurst,
 } from '../renderer/HexGrid.js';
-import { spawnToken, moveToken, bustToken, clearAllTokens, setPlayerModel, clearModelAssignments } from '../renderer/PlayerToken.js';
+import { spawnToken, moveToken, bustToken, smashBustToken, cashOutToken, clearAllTokens, setPlayerModel, clearModelAssignments } from '../renderer/PlayerToken.js';
 import { addPathSegment, clearAllPaths } from '../renderer/PathTracer.js';
 import { focusOnPosition, stopAutoRotate, resumeAutoRotate, shakeCamera } from '../renderer/SphereRenderer.js';
 
@@ -233,24 +234,38 @@ async function _handleReveal({ tileId, type, playerId, voltage }) {
 }
 
 function _handleBust({ playerId }) {
-  // Heavy bust VFX first
-  shakeCamera(0.015, 500);
-  _flashScreen('#ff2020', 0.35, 100, 300);
-  setTimeout(() => _flashScreen('#ff2020', 0.20, 80, 500), 200);
-  bustToken(playerId);
+  // Smash Bros-style bust VFX
+  shakeCamera(0.025, 700);
+  _flashScreen('#ff0000', 0.50, 60, 200);
+  setTimeout(() => _flashScreen('#ff2020', 0.35, 80, 400), 150);
+  setTimeout(() => _flashScreen('#ff4400', 0.20, 80, 600), 350);
+  smashBustToken(playerId);
   playAnnouncement(SFX.BUST);
   if (playerId === _localPlayerId) {
+    _spawnSmashBustBanner();
     _localBusted = true;
     clearSelectables();
     resumeAutoRotate();
   }
-  // Delay bust UI so VFX plays out first
-  setTimeout(() => _notify('onBust', { playerId }), 800);
+  // Delay bust UI so VFX plays out first (longer for Smash animation)
+  setTimeout(() => _notify('onBust', { playerId }), 1000);
 }
 
 function _handleCashout({ playerId, voltage }) {
   playAnnouncement(SFX.CASH_OUT); // plays for all clients
+
+  // Golden token glow + fade
+  const slot = _playerSlots.size > 0
+    ? (_playerSlots.get(playerId) ?? playerId)
+    : playerId;
+  cashOutToken(slot);
+
+  // Golden screen flash
+  _flashScreen('#ffd700', 0.22, 120, 700);
+
+  // Spawn "CASHED OUT" floating banner for local player
   if (playerId === _localPlayerId) {
+    _spawnCashoutBanner(voltage);
     clearSelectables();
     resumeAutoRotate();
   }
@@ -372,6 +387,157 @@ function _spawnConfetti() {
   }
 
   setTimeout(() => wrap.remove(), 3600);
+}
+
+// ─── Cash Out Banner ─────────────────────────────────────────────────────────
+
+function _spawnCashoutBanner(voltage) {
+  // Inject keyframes once
+  if (!document.getElementById('cs-cashout-banner-style')) {
+    const s = document.createElement('style');
+    s.id = 'cs-cashout-banner-style';
+    s.textContent = `
+      @keyframes cs-cashout-appear {
+        0%   { transform: translate(-50%, -50%) scale(0.3); opacity: 0; }
+        30%  { transform: translate(-50%, -50%) scale(1.15); opacity: 1; }
+        50%  { transform: translate(-50%, -50%) scale(1.0); opacity: 1; }
+        100% { transform: translate(-50%, -60%) scale(1.0); opacity: 0; }
+      }
+      @keyframes cs-cashout-glow {
+        0%, 100% { text-shadow: 0 0 20px #ffd70088, 0 0 40px #ffd70044; }
+        50%      { text-shadow: 0 0 30px #ffd700cc, 0 0 60px #ffd70066, 0 0 80px #ffd70033; }
+      }
+    `;
+    document.head.appendChild(s);
+  }
+
+  const banner = document.createElement('div');
+  const mult = voltage != null ? `×${Number(voltage).toFixed(1)}` : '';
+  Object.assign(banner.style, {
+    position:       'fixed',
+    top:            '45%',
+    left:           '50%',
+    transform:      'translate(-50%, -50%)',
+    zIndex:         '10000',
+    pointerEvents:  'none',
+    fontFamily:     "'Rajdhani', sans-serif",
+    fontWeight:     '900',
+    fontSize:       '52px',
+    letterSpacing:  '0.16em',
+    textTransform:  'uppercase',
+    color:          '#ffd700',
+    textShadow:     '0 0 20px #ffd70088, 0 0 40px #ffd70044, 0 2px 8px rgba(0,0,0,0.6)',
+    textAlign:      'center',
+    lineHeight:     '1.2',
+    animation:      'cs-cashout-appear 2.0s ease-out forwards, cs-cashout-glow 0.6s ease-in-out 3',
+  });
+  banner.innerHTML = `CASHED OUT${mult ? `<br><span style="font-size:36px;color:#ffe066;letter-spacing:0.1em">${mult}</span>` : ''}`;
+
+  document.body.appendChild(banner);
+  setTimeout(() => banner.remove(), 2200);
+}
+
+// ─── Collision Surge Banner ──────────────────────────────────────────────────
+
+const _SURGE_ZONE_COLORS = { safe: '#00ffaa', charged: '#ffd700', critical: '#ff3c1e' };
+
+function _spawnCollisionSurgeBanner(zone, voltage) {
+  if (!document.getElementById('cs-collision-surge-style')) {
+    const s = document.createElement('style');
+    s.id = 'cs-collision-surge-style';
+    s.textContent = `
+      @keyframes cs-surge-appear {
+        0%   { transform: translate(-50%, -50%) scale(0.2); opacity: 0; }
+        25%  { transform: translate(-50%, -50%) scale(1.2); opacity: 1; }
+        45%  { transform: translate(-50%, -50%) scale(1.0); opacity: 1; }
+        100% { transform: translate(-50%, -65%) scale(1.0); opacity: 0; }
+      }
+      @keyframes cs-surge-glow {
+        0%, 100% { filter: brightness(1.0); }
+        50%      { filter: brightness(1.4); }
+      }
+    `;
+    document.head.appendChild(s);
+  }
+
+  const color = _SURGE_ZONE_COLORS[zone] ?? '#00ccff';
+  const banner = document.createElement('div');
+  const mult = voltage != null ? `×${Number(voltage).toFixed(2)}` : '';
+  Object.assign(banner.style, {
+    position:       'fixed',
+    top:            '38%',
+    left:           '50%',
+    transform:      'translate(-50%, -50%)',
+    zIndex:         '10001',
+    pointerEvents:  'none',
+    fontFamily:     "'Rajdhani', sans-serif",
+    fontWeight:     '900',
+    fontSize:       '46px',
+    letterSpacing:  '0.14em',
+    textTransform:  'uppercase',
+    color,
+    textShadow:     `0 0 20px ${color}88, 0 0 40px ${color}44, 0 0 60px ${color}22, 0 2px 8px rgba(0,0,0,0.7)`,
+    textAlign:      'center',
+    lineHeight:     '1.2',
+    animation:      'cs-surge-appear 2.4s ease-out forwards, cs-surge-glow 0.5s ease-in-out 4',
+  });
+  banner.innerHTML = `⚡ COLLISION SURGE${mult ? `<br><span style="font-size:30px;color:${color};letter-spacing:0.08em">${mult}</span>` : ''}`;
+
+  document.body.appendChild(banner);
+  setTimeout(() => banner.remove(), 2600);
+}
+
+// ─── Smash Bros-Style Bust Banner ────────────────────────────────────────────
+
+function _spawnSmashBustBanner() {
+  if (!document.getElementById('cs-smash-bust-style')) {
+    const s = document.createElement('style');
+    s.id = 'cs-smash-bust-style';
+    s.textContent = `
+      @keyframes cs-smash-bust-slam {
+        0%   { transform: translate(-50%, -50%) scale(3.0) rotate(-8deg); opacity: 0; }
+        12%  { transform: translate(-50%, -50%) scale(1.0) rotate(2deg);  opacity: 1; }
+        18%  { transform: translate(-50%, -50%) scale(1.15) rotate(-1deg); opacity: 1; }
+        30%  { transform: translate(-50%, -50%) scale(1.0) rotate(0deg);  opacity: 1; }
+        75%  { transform: translate(-50%, -50%) scale(1.0) rotate(0deg);  opacity: 1; }
+        100% { transform: translate(-50%, -55%) scale(0.8) rotate(0deg);  opacity: 0; }
+      }
+      @keyframes cs-smash-bust-shake {
+        0%, 100% { margin-left: 0; }
+        10%      { margin-left: -6px; }
+        20%      { margin-left: 5px; }
+        30%      { margin-left: -4px; }
+        40%      { margin-left: 3px; }
+        50%      { margin-left: 0; }
+      }
+    `;
+    document.head.appendChild(s);
+  }
+
+  const banner = document.createElement('div');
+  Object.assign(banner.style, {
+    position:       'fixed',
+    top:            '45%',
+    left:           '50%',
+    transform:      'translate(-50%, -50%)',
+    zIndex:         '10002',
+    pointerEvents:  'none',
+    fontFamily:     "'Rajdhani', sans-serif",
+    fontWeight:     '900',
+    fontSize:       '72px',
+    letterSpacing:  '0.12em',
+    textTransform:  'uppercase',
+    color:          '#ff2020',
+    textShadow:     '0 0 30px #ff000099, 0 0 60px #ff000066, 0 0 90px #ff000033, 0 4px 12px rgba(0,0,0,0.8)',
+    textAlign:      'center',
+    lineHeight:     '1.0',
+    WebkitTextStroke: '2px #880000',
+    animation:      'cs-smash-bust-slam 2.0s cubic-bezier(0.16, 1, 0.3, 1) forwards, cs-smash-bust-shake 0.3s ease-in-out 0.12s 2',
+  });
+  banner.textContent = 'BUSTED!';
+
+  document.body.appendChild(banner);
+  setTimeout(() => banner.remove(), 2200);
 }
 
 /** Show selectable (adjacent) tiles for a player. */
@@ -645,32 +811,58 @@ export async function handleP1TurnReveal(results, newlyRevealedTiles) {
         } else {
           _flashScreen('#22c55e', 0.08, 100, 400);
         }
+
+        // ── COLLISION SURGE VFX ──
+        if (result.collisionSurge) {
+          spawnCollisionBurst(tileId);
+          setTimeout(() => spawnCollisionBurst(tileId), 200);
+          spawnShockwave(tileId, 0x00ccff);
+          _flashScreen('#00ccff', 0.22, 120, 600);
+          if (playerId === _localPlayerId) {
+            _spawnCollisionSurgeBanner(result.zone, totalVoltage);
+          }
+        }
       }
     }
 
     if (status === 'busted') {
-      // ── BUST VFX: heavy shake + double red flash + grey out ──
-      shakeCamera(0.015, 500);                         // harder, longer shake
-      _flashScreen('#ff2020', 0.35, 100, 300);         // first hard red punch
-      setTimeout(() => _flashScreen('#ff2020', 0.20, 80, 500), 200); // second red aftershock
-      bustToken(slot);
-      playAnnouncement(SFX.BUST);
-      // Burst of red-tinted sparks at bust location
+      // ── SMASH BROS-STYLE BUST VFX ──
+      // 1. Hard hit-freeze camera shake (longer, heavier)
+      shakeCamera(0.025, 700);
+
+      // 2. Star burst explosion at impact tile
       if (tileId != null) {
-        spawnSparks(tileId);
-        setTimeout(() => spawnSparks(tileId), 120);
+        spawnSmashBurst(tileId);
+        setTimeout(() => spawnSmashBurst(tileId), 100);
+        spawnShockwave(tileId, 0xff2200);
+        setTimeout(() => spawnShockwave(tileId, 0xff6600), 150);
       }
 
+      // 3. Triple red flash — escalating intensity (the Smash "screen crack" feel)
+      _flashScreen('#ff0000', 0.50, 60, 200);
+      setTimeout(() => _flashScreen('#ff2020', 0.35, 80, 400), 150);
+      setTimeout(() => _flashScreen('#ff4400', 0.20, 80, 600), 350);
+
+      // 4. Launch token off the sphere (Smash-style KO fly-off)
+      smashBustToken(slot);
+      playAnnouncement(SFX.BUST);
+
+      // 5. Spawn "BUSTED!" KO banner for local player
       if (playerId === _localPlayerId) {
+        _spawnSmashBustBanner();
         _localBusted = true;
         clearSelectables();
         resumeAutoRotate();
       }
-      // Defer bust HUD notification — show AFTER VFX has impact
+
+      // Defer bust HUD notification — show AFTER VFX plays out
       deferredBusts.push({ playerId: slot });
     } else if (status === 'cashed_out') {
       playAnnouncement(SFX.CASH_OUT);
+      cashOutToken(slot);
+      _flashScreen('#ffd700', 0.22, 120, 700);
       if (playerId === _localPlayerId) {
+        _spawnCashoutBanner(totalVoltage);
         clearSelectables();
         resumeAutoRotate();
       }
@@ -734,9 +926,12 @@ function _instantReveal(results, newlyRevealedTiles) {
       _notify('onReveal', { tileId, type: tileState === 'trap' ? 'trap' : tileState === 'reward' ? 'reward' : 'safe', playerId: slot, voltage: totalVoltage });
     }
     if (status === 'busted') {
-      bustToken(slot);
+      smashBustToken(slot);
+      shakeCamera(0.025, 700);
+      _flashScreen('#ff0000', 0.50, 60, 200);
+      if (tileId != null) spawnSmashBurst(tileId);
       playAnnouncement(SFX.BUST);
-      if (playerId === _localPlayerId) { _localBusted = true; clearSelectables(); resumeAutoRotate(); }
+      if (playerId === _localPlayerId) { _spawnSmashBustBanner(); _localBusted = true; clearSelectables(); resumeAutoRotate(); }
       _notify('onBust', { playerId: slot });
     } else if (status === 'cashed_out') {
       playAnnouncement(SFX.CASH_OUT);
