@@ -399,7 +399,7 @@ export function updateTiles(now) {
       border.material.opacity = 0.72 + 0.25 * Math.sin(t * 7);
     } else if (_rings.has(id)) {
       // Selectable: slow looping flash — clearly signals "you can go here"
-      border.material.opacity = 0.20 + 0.60 * (0.5 + 0.5 * Math.sin(t * 3.5));
+      border.material.opacity = 0.50 + 0.50 * (0.5 + 0.5 * Math.sin(t * 3.5));
     } else {
       const tileData = _tiles.get(id);
       if (tileData && tileData.state !== 'hidden') {
@@ -425,14 +425,14 @@ export function updateTiles(now) {
       disc.material.color.set(DISC_COLOR_SELECTED);
       if (tile) tile.mesh.material.emissiveIntensity = 1.4;
     } else if (id === _hoveredId) {
-      disc.material.opacity = 0.85;
+      disc.material.opacity = 0.95;
       disc.material.color.set(DISC_COLOR_HOVER);
-      if (tile) tile.mesh.material.emissiveIntensity = 1.2 + 0.15 * Math.sin(t * 6);
+      if (tile) tile.mesh.material.emissiveIntensity = 1.8 + 0.20 * Math.sin(t * 6);
     } else {
-      disc.material.opacity = 0.35 + 0.20 * Math.sin(t * 2.5 + id * 0.8);
+      disc.material.opacity = 0.50 + 0.35 * (0.5 + 0.5 * Math.sin(t * 2.5 + id * 0.8));
       disc.material.color.set(DISC_COLOR_DEFAULT);
-      // Gentle pulse glow on the tile face — breathes in sync with the neon border flash
-      if (tile) tile.mesh.material.emissiveIntensity = 0.90 + 0.45 * (0.5 + 0.5 * Math.sin(t * 3.5));
+      // Strong pulse glow on the tile face — pops against the dark hidden tiles
+      if (tile) tile.mesh.material.emissiveIntensity = 1.20 + 0.60 * (0.5 + 0.5 * Math.sin(t * 3.5));
     }
   });
 }
@@ -504,7 +504,7 @@ export function clearSelectables() {
   _rings.forEach((disc, id) => {
     // Restore tile face back to the standard hidden glow before removing the ring
     const tile = _tiles.get(id);
-    if (tile && tile.state === 'hidden') tile.mesh.material.emissiveIntensity = 0.55;
+    if (tile && tile.state === 'hidden') tile.mesh.material.emissiveIntensity = 0.10;
     disc.geometry.dispose();
     disc.material.dispose();
     _scene.remove(disc);
