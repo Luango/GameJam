@@ -96,12 +96,13 @@ export function isResolved(player) {
 }
 
 /**
- * Apply a step result to a player.
+ * Apply a step result to a player (multiplicative voltage model).
  */
-export function applyStepResult(player, tileId, voltageGain, zone) {
+export function applyStepResult(player, tileId, stepMultiplier, zone) {
   player.path.push(tileId);
   player.currentTileId = tileId;
-  player.voltage += voltageGain;
+  player.voltage *= stepMultiplier;
+  player.voltage = Math.round(player.voltage * 10000) / 10000; // prevent float drift
 
   // Track deepest zone
   const zoneDepth = { [ZONE.SAFE]: 0, [ZONE.CHARGED]: 1, [ZONE.CRITICAL]: 2 };

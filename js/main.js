@@ -624,7 +624,7 @@ function handleTurnReveal(msg) {
     HUD.updatePhase(localPlayer.deepestZone);
 
     // Show voltage gain feedback
-    if (localResult && localResult.action === ACTION.STEP && localResult.voltageGain > 0) {
+    if (localResult && localResult.action === ACTION.STEP && localResult.voltageGain > 1) {
       HUD.showVoltageGain(localResult.voltageGain, localResult.tileState);
     }
 

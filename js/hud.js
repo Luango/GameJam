@@ -355,16 +355,16 @@ export function hideResults() {
 }
 
 /**
- * Show floating voltage gain notification.
- * @param {number} gain - Voltage gained this step
+ * Show floating voltage step multiplier notification.
+ * @param {number} multiplier - Step multiplier applied this step
  * @param {string} tileState - 'safe' | 'reward'
  */
-export function showVoltageGain(gain, tileState) {
+export function showVoltageGain(multiplier, tileState) {
   if (!hudEl) return;
   const el = document.createElement('div');
   el.className = 'voltage-gain-popup';
   if (tileState === 'reward') el.classList.add('reward-gain');
-  el.textContent = `+${gain.toFixed(2)}x`;
+  el.textContent = `×${multiplier.toFixed(2)}`;
   hudEl.appendChild(el);
   setTimeout(() => el.remove(), 1500);
 }

@@ -23,13 +23,17 @@ export const DEFAULT_CONFIG = {
   sphereRadius: 6,
   subdivisions: 3,
   turnTimerMs: 30000,
-  // 96% RTP (Casual) — house edge ~4% overall
+  // 96% RTP (Enforced) — multiplicative voltage, 4% house edge per step
+  // stepMultiplier = targetRTP / P(survive), where P(survive) = 1 - trapDensity
+  // See docs/RTP_DESIGN.md for full derivation and verification
   trapDensity: { safe: 0.12, charged: 0.25, critical: 0.35 },
   rewardDensity: { safe: 0.10, charged: 0.12, critical: 0.15 },
   voltageRates: {
-    safe:     { base: 0.12, reward: 0.25, follower: 0.06 },
-    charged:  { base: 0.30, reward: 0.55, follower: 0.15 },
-    critical: { base: 0.70, reward: 1.30, follower: 0.35 },
+    targetRTP: 0.96,
+    rewardBonus: 1.15,
+    safe:     { base: 1.09091, follower: 0.96 },  // 0.96 / 0.88
+    charged:  { base: 1.28000, follower: 0.96 },  // 0.96 / 0.75
+    critical: { base: 1.47692, follower: 0.96 },  // 0.96 / 0.65
   },
   // Zone boundaries (latitude angle from equator, in radians)
   // Safe:     |lat| <= 0.4    (~23 degrees from equator)
@@ -94,8 +98,8 @@ export function generateBoard(seed, config = DEFAULT_CONFIG) {
       tile.tileType = TILE.TRAP;
     } else if (roll < trapChance + rewardChance) {
       tile.tileType = TILE.REWARD;
-      // Reward value scales with zone
-      tile.rewardValue = config.voltageRates[tile.zone].reward;
+      // Reward bonus multiplier (zone-independent)
+      tile.rewardValue = config.voltageRates.rewardBonus ?? 1.15;
     }
     // else stays SAFE
   }

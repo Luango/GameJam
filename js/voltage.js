@@ -6,15 +6,17 @@ import { TILE, ZONE } from './protocol.js';
 import { DEFAULT_CONFIG } from './board.js';
 
 /**
- * Calculate Voltage gain for a single step.
+ * Calculate voltage step multiplier for a single step.
+ * Multiplicative model: voltage *= stepMultiplier each step.
+ * Enforces fixed 96% RTP per step: stepMultiplier = targetRTP / P(survive).
  *
  * @param {string} zone - ZONE.SAFE | ZONE.CHARGED | ZONE.CRITICAL
  * @param {string} tileType - TILE.SAFE | TILE.TRAP | TILE.REWARD
  * @param {boolean} isFollower - True if tile was already revealed safe by another player
  * @param {boolean} isSimultaneous - True if multiple players claim this tile on same turn
- * @param {number} simultaneousCount - Number of players claiming simultaneously (for reward split)
+ * @param {number} simultaneousCount - Number of players claiming simultaneously
  * @param {object} rates - voltageRates config (default: DEFAULT_CONFIG.voltageRates)
- * @returns {{ voltageGain: number, breakdown: object }}
+ * @returns {{ stepMultiplier: number, breakdown: object }}
  */
 export function calculateStepVoltage(
   zone,
@@ -26,50 +28,51 @@ export function calculateStepVoltage(
     rates = DEFAULT_CONFIG.voltageRates,
   } = {}
 ) {
-  // Trap = no gain (player busts)
+  // Trap = bust (multiplier zeroes out voltage)
   if (tileType === TILE.TRAP) {
-    return { voltageGain: 0, breakdown: { base: 0, reward: 0, resistance: false } };
+    return { stepMultiplier: 0, breakdown: { base: 0, reward: 1, resistance: false } };
   }
 
   const zoneRates = rates[zone];
   if (!zoneRates) {
     console.warn(`[Voltage] Unknown zone: ${zone}`);
-    return { voltageGain: 0, breakdown: { base: 0, reward: 0, resistance: false } };
+    return { stepMultiplier: 1, breakdown: { base: 1, reward: 1, resistance: false } };
   }
 
-  let baseGain;
+  let baseMultiplier;
   let resistanceApplied = false;
 
   if (isFollower) {
-    // Path resistance: follower gets reduced rate
-    baseGain = zoneRates.follower;
+    // Already-revealed tile: 0% trap risk, house takes 4% directly
+    baseMultiplier = zoneRates.follower; // 0.96
     resistanceApplied = true;
   } else if (isSimultaneous && simultaneousCount > 1) {
-    // Simultaneous claim: between full and follower
-    // Use average of base and follower
-    baseGain = (zoneRates.base + zoneRates.follower) / 2;
+    // Simultaneous claim: average of base and follower multipliers
+    baseMultiplier = (zoneRates.base + zoneRates.follower) / 2;
   } else {
-    // First claimer: full rate
-    baseGain = zoneRates.base;
+    // First claimer: full step multiplier
+    baseMultiplier = zoneRates.base;
   }
 
-  // Reward bonus
-  let rewardGain = 0;
+  // Reward bonus (multiplicative on top of base)
+  let rewardMultiplier = 1;
   if (tileType === TILE.REWARD) {
-    rewardGain = zoneRates.reward;
+    const bonus = rates.rewardBonus ?? 1.15;
     if (isSimultaneous && simultaneousCount > 1) {
-      // Split reward evenly among simultaneous claimers
-      rewardGain = rewardGain / simultaneousCount;
+      // Split: raise bonus to power of 1/count
+      rewardMultiplier = Math.pow(bonus, 1 / simultaneousCount);
+    } else {
+      rewardMultiplier = bonus;
     }
   }
 
-  const voltageGain = baseGain + rewardGain;
+  const stepMultiplier = baseMultiplier * rewardMultiplier;
 
   return {
-    voltageGain: Math.round(voltageGain * 1000) / 1000, // 3 decimal precision
+    stepMultiplier: Math.round(stepMultiplier * 10000) / 10000, // 4 decimal precision
     breakdown: {
-      base: baseGain,
-      reward: rewardGain,
+      base: baseMultiplier,
+      reward: rewardMultiplier,
       resistance: resistanceApplied,
     },
   };
