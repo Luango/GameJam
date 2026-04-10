@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { ZONE_BANDS, TILE_COUNT } from '../constants/gameConfig.js';
-import { initMaterials, getMaterial, applyState } from './TileMaterials.js';
+import { initMaterials, getMaterial, applyState, AVAILABLE_ROUGHNESS, AVAILABLE_METALNESS } from './TileMaterials.js';
 
 // HexGrid — hex tile mesh projected onto sphere surface.
 // Owns the tile state machine: hidden → revealed-safe | revealed-trap | reward.
@@ -17,8 +17,11 @@ let _p1Board = null;
 
 // ── Neon border strip meshes (permanent, one per tile) ───────────────────────
 const _borders = new Map(); // tileId → THREE.Mesh (quad-strip rim)
-const ZONE_NEON   = { safe: 0x00e5ff, charged: 0xccff00, critical: 0xff0080 };
-const REVEAL_NEON = { 'revealed-safe': 0x00ff55, 'revealed-trap': 0xff3300, reward: 0xffd700 };
+// Neon border colours — vivid accent on top of the dark hidden base.
+// Charged swapped from acid-lime → electric amber to match the warm burnt base.
+const ZONE_NEON   = { safe: 0x00e5ff, charged: 0x8b5cf6, critical: 0xff0080 };
+// Reveal borders snap to outcome colour — bright, permanent, readable.
+const REVEAL_NEON = { 'revealed-safe': 0x00ff88, 'revealed-trap': 0xff2244, reward: 0xffd700 };
 let _selectedTime = -Infinity; // performance.now() when last selection happened
 
 // ── Spark particles (local only, spawned on tile selection) ───────────────────
@@ -256,7 +259,7 @@ export function setTileState(tileId, state) {
   if (!tile) return;
   tile.state = state;
   tile.animData = { startTime: performance.now() };
-  applyState(tile.mesh.material, state);
+  applyState(tile.mesh.material, state, tile.zone);
   tile.mesh.material.needsUpdate = true;
 
   // Swap border neon to the reveal colour so the tube matches the tile
@@ -493,18 +496,27 @@ export function setSelectableTiles(tileIds) {
     const disc = _buildDisc(tile);
     _scene.add(disc);
     _rings.set(id, disc);
+    // Sharpen surface to polished/metallic — available tiles are energised, not dormant
+    if (tile.state === 'hidden') {
+      tile.mesh.material.roughness = AVAILABLE_ROUGHNESS;
+      tile.mesh.material.metalness = AVAILABLE_METALNESS;
+      tile.mesh.material.needsUpdate = true;
+    }
   });
   // Cursor hint on canvas
   const cv = document.getElementById('canvas');
   if (cv) cv.style.cursor = tileIds.length ? 'crosshair' : 'default';
 }
 
-/** Remove all selectable discs and restore tile face emissive to hidden baseline. */
+/** Remove all selectable discs and restore tile face to inert hidden baseline. */
 export function clearSelectables() {
   _rings.forEach((disc, id) => {
-    // Restore tile face back to the standard hidden glow before removing the ring
+    // Restore tile face fully back to hidden state (matte, dark, zone-aware emissive)
     const tile = _tiles.get(id);
-    if (tile && tile.state === 'hidden') tile.mesh.material.emissiveIntensity = 0.10;
+    if (tile && tile.state === 'hidden') {
+      applyState(tile.mesh.material, 'hidden', tile.zone);
+      tile.mesh.material.needsUpdate = true;
+    }
     disc.geometry.dispose();
     disc.material.dispose();
     _scene.remove(disc);
