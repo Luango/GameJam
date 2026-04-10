@@ -29,6 +29,21 @@ let _selectedTime = -Infinity; // performance.now() when last selection happened
 const _sparks = []; // { points, velocities, posAttr, startTime }
 const SPARK_LIFE_S = 0.80;
 
+// ── Clash VFX (plays when two players land on the same tile) ──────────────────
+const _clashEffects = []; // { ring, bursts, sparks, startTime }
+let _clashTextures = null;
+
+function _loadClashTextures() {
+  if (_clashTextures) return _clashTextures;
+  const loader = new THREE.TextureLoader();
+  const base = import.meta.env.BASE_URL.replace(/\/$/, '');
+  _clashTextures = {
+    ring:  loader.load(`${base}/assets/vfx/clash-ring.png`),
+    burst: loader.load(`${base}/assets/vfx/clash-burst.png`),
+  };
+  return _clashTextures;
+}
+
 // ── Shockwave rings (expanding ring on reveal) ──────────────────────────────
 const _shockwaves = []; // { points, dirs, posAttr, startTime }
 const SHOCKWAVE_LIFE_S = 0.50;
@@ -584,6 +599,98 @@ export function spawnShockwave(tileId, color = 0x00ff55) {
 }
 
 /**
+ * Voltage Clash VFX — plays when two players land on the same tile simultaneously.
+ * Spawns an expanding electric ring + dual colour burst sprites + a dense spark cloud.
+ * @param {number}   tileId        — tile where the collision happened
+ * @param {number[]} playerColors  — hex colours for each colliding player (up to 4)
+ */
+export function playClash(tileId, playerColors = [0x38bdf8, 0xf472b6]) {
+  const tile = _tiles.get(tileId);
+  if (!tile || !_scene) return;
+
+  const tex = _loadClashTextures();
+  const center = tile.center ?? tile.mesh.position;
+  const normal = center.clone().normalize();
+  const lift   = center.clone().addScaledVector(normal, 0.06);
+
+  // ── Ring — expands from tile centre outward ──────────────────────────────
+  const ringMat = new THREE.SpriteMaterial({
+    map: tex.ring, color: 0xffffff,
+    transparent: true, opacity: 1.0,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+  });
+  const ring = new THREE.Sprite(ringMat);
+  ring.position.copy(lift);
+  ring.scale.set(0.04, 0.04, 1);
+  _scene.add(ring);
+
+  // ── Dual burst sprites — one tinted per player ───────────────────────────
+  const bursts = playerColors.slice(0, 2).map((color, i) => {
+    const mat = new THREE.SpriteMaterial({
+      map: tex.burst, color,
+      transparent: true, opacity: 0.0,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    const sprite = new THREE.Sprite(mat);
+    // Offset each burst slightly so they visually overlap at the centre
+    const nudge = (i === 0 ? -1 : 1) * 0.01;
+    sprite.position.copy(lift).addScaledVector(normal, nudge);
+    sprite.scale.set(0.18, 0.18, 1);
+    _scene.add(sprite);
+    return sprite;
+  });
+
+  // ── Dense electric spark cloud ───────────────────────────────────────────
+  const tang1 = new THREE.Vector3().crossVectors(
+    normal,
+    Math.abs(normal.x) < 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0),
+  ).normalize();
+  const tang2 = new THREE.Vector3().crossVectors(normal, tang1).normalize();
+
+  const SPARK_COUNT = 60;
+  const posArr = new Float32Array(SPARK_COUNT * 3);
+  const vels   = [];
+  for (let i = 0; i < SPARK_COUNT; i++) {
+    posArr[i * 3]     = center.x;
+    posArr[i * 3 + 1] = center.y;
+    posArr[i * 3 + 2] = center.z;
+    const theta = Math.random() * Math.PI * 2;
+    const phi   = Math.random() * Math.PI * 0.75;
+    const speed = 0.006 + Math.random() * 0.016;
+    vels.push(
+      new THREE.Vector3()
+        .addScaledVector(normal, Math.cos(phi))
+        .addScaledVector(tang1,  Math.sin(phi) * Math.cos(theta))
+        .addScaledVector(tang2,  Math.sin(phi) * Math.sin(theta))
+        .multiplyScalar(speed),
+    );
+  }
+  const clashGeo  = new THREE.BufferGeometry();
+  const clashAttr = new THREE.BufferAttribute(posArr, 3);
+  clashAttr.setUsage(THREE.DynamicDrawUsage);
+  clashGeo.setAttribute('position', clashAttr);
+
+  // Alternate spark colour between the two players' hues for visual clash
+  const sparkColor = new THREE.Color(playerColors[0] ?? 0xffffff)
+    .lerp(new THREE.Color(playerColors[1] ?? 0xffffff), 0.5)
+    .addScalar(0.4); // push toward white-hot
+
+  const clashMat = new THREE.PointsMaterial({
+    color: sparkColor, size: 0.028,
+    transparent: true, opacity: 1.0,
+    blending: THREE.AdditiveBlending, depthWrite: false,
+    sizeAttenuation: true,
+  });
+  const clashPoints = new THREE.Points(clashGeo, clashMat);
+  _scene.add(clashPoints);
+
+  // ── Tile face flicker — resets the tile's animData clock ────────────────
+  if (tile.animData) tile.animData.clashTime = performance.now();
+
+  _clashEffects.push({ ring, bursts, clashPoints, clashAttr, vels, startTime: performance.now() });
+}
+
+/**
  * Call each frame from the render loop to drive tile + disc animations.
  * @param {number} now  — performance.now() timestamp
  */
@@ -721,6 +828,62 @@ export function updateTiles(now) {
       }
     }
   });
+
+  // ── Animate clash VFX ────────────────────────────────────────────────────
+  for (let i = _clashEffects.length - 1; i >= 0; i--) {
+    const fx = _clashEffects[i];
+    const age = (now - fx.startTime) / 1000; // seconds
+    const RING_DUR  = 0.85;
+    const BURST_DUR = 0.55;
+    const SPARK_DUR = 1.00;
+
+    // Ring: scale 0.04 → 0.55, opacity 1 → 0
+    if (age < RING_DUR) {
+      const p = age / RING_DUR;
+      const eased = 1 - Math.pow(1 - p, 2); // ease-out quad
+      const s = 0.04 + eased * 0.51;
+      fx.ring.scale.set(s, s, 1);
+      fx.ring.material.opacity = 1.0 - p;
+    } else {
+      fx.ring.material.opacity = 0;
+    }
+
+    // Bursts: quick pop in (0–0.10s), then fade out (0.10–BURST_DUR)
+    fx.bursts.forEach((b) => {
+      if (age < 0.10) {
+        b.material.opacity = age / 0.10;
+      } else if (age < BURST_DUR) {
+        b.material.opacity = 1.0 - (age - 0.10) / (BURST_DUR - 0.10);
+      } else {
+        b.material.opacity = 0;
+      }
+    });
+
+    // Spark cloud: drift + fade
+    if (age < SPARK_DUR) {
+      fx.clashPoints.material.opacity = 1.0 - age / SPARK_DUR;
+      const arr = fx.clashAttr.array;
+      for (let j = 0; j < fx.vels.length; j++) {
+        arr[j * 3]     += fx.vels[j].x;
+        arr[j * 3 + 1] += fx.vels[j].y;
+        arr[j * 3 + 2] += fx.vels[j].z;
+        // Decelerate over time
+        fx.vels[j].multiplyScalar(0.97);
+      }
+      fx.clashAttr.needsUpdate = true;
+    }
+
+    // Clean up after full duration
+    if (age >= Math.max(RING_DUR, BURST_DUR, SPARK_DUR)) {
+      _scene.remove(fx.ring);
+      _scene.remove(fx.clashPoints);
+      fx.ring.material.dispose();
+      fx.clashPoints.geometry.dispose();
+      fx.clashPoints.material.dispose();
+      fx.bursts.forEach((b) => { _scene.remove(b); b.material.dispose(); });
+      _clashEffects.splice(i, 1);
+    }
+  }
 
   // Animate selectable discs + tile face glow
   _rings.forEach((disc, id) => {

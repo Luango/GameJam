@@ -231,7 +231,7 @@ function _buildOverlay() {
     <div style="text-align:center">
       <div style="font-family:${FONT_MONO};font-size:22px;letter-spacing:.18em;
                   color:#38bdf8;text-shadow:0 0 16px #38bdf8aa;margin-bottom:4px">
-        CIRCUIT SPHERE
+        VOLTEX
       </div>
       <div style="font-family:${FONT_UI};font-size:12px;letter-spacing:.12em;
                   color:#475569;text-transform:uppercase">

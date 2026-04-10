@@ -5,9 +5,10 @@ import {
   setSelectableTiles, clearSelectables,
   setHoveredTile, setSelectedTile, isSelectable,
   getAdjacentTileIds, getTileIdsByZone, getTilePosition,
-  spawnSparks, startTileCharge, stopTileCharge, spawnShockwave,
+  spawnSparks, playClash, startTileCharge, stopTileCharge, spawnShockwave,
   spawnCollisionBurst, spawnSmashBurst,
 } from '../renderer/HexGrid.js';
+import { PLAYER_COLORS } from '../constants/gameConfig.js';
 import { spawnToken, moveToken, bustToken, smashBustToken, cashOutToken, clearAllTokens, setPlayerModel, clearModelAssignments } from '../renderer/PlayerToken.js';
 import { addPathSegment, clearAllPaths } from '../renderer/PathTracer.js';
 import { focusOnPosition, stopAutoRotate, resumeAutoRotate, shakeCamera } from '../renderer/SphereRenderer.js';
@@ -336,6 +337,34 @@ function _fadeVignette(fadeMs = 600) {
     _vignetteEl.style.transition = `opacity ${fadeMs}ms ease-out`;
     _vignetteEl.style.opacity = '0';
   }
+}
+
+/**
+ * Sharp electric screen flash for Voltage Clash events.
+ * Hits harder and faster than the gentle turn-start breath — a cyan-white crack.
+ */
+function _flashScreenClash() {
+  if (!_flashEl) {
+    _flashEl = document.createElement('div');
+    Object.assign(_flashEl.style, {
+      position: 'fixed', inset: '0',
+      pointerEvents: 'none', opacity: '0', zIndex: '9998',
+    });
+    document.body.appendChild(_flashEl);
+  }
+  // Radial burst from centre — electric cyan to white
+  _flashEl.style.background =
+    'radial-gradient(ellipse at center, #ffffff 0%, #00e5ff 35%, transparent 75%)';
+  _flashEl.style.transition = 'opacity 0.06s ease-in';
+  _flashEl.style.opacity = '0.55';
+
+  // Two-phase: hold bright briefly, then fade hard
+  setTimeout(() => {
+    _flashEl.style.transition = 'opacity 0.55s ease-out';
+    _flashEl.style.opacity = '0';
+  }, 90);
+  // Reset gradient so next turn-start breath uses plain white
+  setTimeout(() => { _flashEl.style.background = 'white'; }, 700);
 }
 
 // ─── Confetti ─────────────────────────────────────────────────────────────────
@@ -873,6 +902,25 @@ export async function handleP1TurnReveal(results, newlyRevealedTiles) {
       _notify('onIdleStrikes', { count: idleStrikes });
     }
   }
+
+  // ── Voltage Clash — fire when 2+ players land on the same tile ───────────
+  const clashMap = new Map(); // tileId → slot[]
+  for (const result of results) {
+    if (result.isSimultaneousClaim && result.tileId != null && result.action === 'step') {
+      const slot = _playerSlots.size > 0
+        ? (_playerSlots.get(result.playerId) ?? 0)
+        : (typeof result.playerId === 'number' ? result.playerId : 0);
+      if (!clashMap.has(result.tileId)) clashMap.set(result.tileId, []);
+      clashMap.get(result.tileId).push(slot);
+    }
+  }
+  clashMap.forEach((slots, tileId) => {
+    if (slots.length < 2) return;
+    const colors = slots.map((s) => PLAYER_COLORS[s] ?? 0xffffff);
+    playClash(tileId, colors);
+    _flashScreenClash();
+    playAnnouncement(SFX.COLLISION); // plays for every client — it's a shared moment
+  });
 
   _fadeVignette(hasBust ? 1000 : 600);
 
