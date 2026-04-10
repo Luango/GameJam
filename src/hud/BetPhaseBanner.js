@@ -91,7 +91,7 @@ function _build() {
     </div>
     <div style="font-family:${FONT_MONO};font-size:11px;letter-spacing:.14em;
                 color:#94a3b8;text-transform:uppercase;line-height:1.5;max-width:340px">
-      Commit a bet before the timer ends &nbsp;·&nbsp; Only players who wager join this round
+      Commit a bet &amp; pick a character &nbsp;·&nbsp; First come, first serve
     </div>
   `;
 
