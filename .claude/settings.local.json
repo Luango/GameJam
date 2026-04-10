@@ -6,7 +6,12 @@
       "Bash(git fetch:*)",
       "Bash(git checkout:*)",
       "Bash(npm install:*)",
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(git -C \"C:/Users/Qinmei Liu/Desktop/Game jam/GameJam\" remote get-url origin)",
+      "Bash(git clone:*)",
+      "Bash(git branch:*)",
+      "Bash(git merge:*)",
+      "Bash(git add:*)"
     ]
   }
 }
