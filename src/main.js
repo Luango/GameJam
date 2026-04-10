@@ -45,6 +45,7 @@ import { init as initGameStartBanner }     from './hud/GameStartBanner.js';
 import { init as initBetPhaseBanner }      from './hud/BetPhaseBanner.js';
 import { init as initBustOverlay }         from './hud/BustOverlay.js';
 import { init as initBustedSpectate }      from './hud/BustedSpectatePrompt.js';
+import { init as initHowToPlay }           from './hud/HowToPlayPanel.js';
 
 import {
   init as initOrchestrator,
@@ -84,10 +85,12 @@ initBridge(eventBus);
 let _lobbyControls = null;
 let _resultsUI = null;
 const _betPhaseBanner = initBetPhaseBanner(app);
+const _howToPlay      = initHowToPlay(app);
 
 initOrchestrator(eventBus, {
   onGameStart: () => {
     _betPhaseBanner.hide();
+    _howToPlay.hide();
     stopBettingCountdown();
     clearBettingRoster();
     _lobbyControls?.hide();
@@ -97,6 +100,7 @@ initOrchestrator(eventBus, {
   onBettingPhaseStart: ({ playerList, timerDeadline }) => {
     _lobbyControls?.hide();
     _betPhaseBanner.show();
+    _howToPlay.showIfFirstTime();
     enterBettingPhase();
     refreshBetBalance();
     showBettingRoster(playerList, getLocalId());
@@ -108,6 +112,7 @@ initOrchestrator(eventBus, {
   },
   onBettingAbortedToLobby: () => {
     _betPhaseBanner.hide();
+    _howToPlay.hide();
     stopBettingCountdown();
     clearBettingRoster();
     _lobbyControls?.show();
@@ -119,6 +124,7 @@ initOrchestrator(eventBus, {
     resetMatchVisualsForLobby();
     _resultsUI?.hide();
     _betPhaseBanner.hide();
+    _howToPlay.hide();
     stopBettingCountdown();
     clearBettingRoster();
     _lobbyControls?.show();
