@@ -51,9 +51,16 @@ export function getMaterial(zone, state = 'hidden') {
  * Apply a state's emissive settings onto an existing material instance.
  */
 export function applyState(material, state) {
-  const s = STATE_EMISSIVE[state] ?? STATE_EMISSIVE.hidden;
-  material.emissive.set(s.color);
-  material.emissiveIntensity = s.intensity;
+  if (state === 'hidden') {
+    // Self-illuminate with the tile's own zone colour so it's always visible
+    // regardless of which way it faces relative to the lights.
+    material.emissive.copy(material.color);
+    material.emissiveIntensity = 0.4;
+  } else {
+    const s = STATE_EMISSIVE[state] ?? STATE_EMISSIVE.hidden;
+    material.emissive.set(s.color);
+    material.emissiveIntensity = s.intensity;
+  }
 }
 
 /**
