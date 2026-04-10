@@ -7,10 +7,13 @@ export const ZONE_BANDS = {
   // > 60° → critical zone
 };
 
+// Hidden tile base colours — near-black with a strong hue hint so zones are
+// identifiable but dark enough that revealed / selectable states pop dramatically.
+// Inspired by Vegas Infinite's deep-space cyber-casino aesthetic.
 export const ZONE_COLORS = {
-  safe:     0x22d3ee, // soft cyan (desaturated from electric)
-  charged:  0xa3e635, // soft lime-green (desaturated from acid)
-  critical: 0xdb2777, // deep pink (desaturated from neon magenta)
+  safe:     0x0C3547, // deep navy-teal   — cold, unknown, survivable
+  charged:  0x1E0A3D, // deep indigo-violet — volatile, electric, between worlds
+  critical: 0x3D0A24, // deep crimson-magenta — dangerous, electric, fatal
 };
 
 export const PLAYER_COLORS = [
