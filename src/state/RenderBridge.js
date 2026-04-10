@@ -386,10 +386,49 @@ function _refreshSelectables(playerId) {
  * Pick a starting tile from the safe zone, spreading players evenly.
  * Players always start in the safe zone (|lat| < 30°).
  */
+/**
+ * Pick maximally spread start tiles for all players, then return the one for playerIndex.
+ * Uses greedy farthest-point sampling based on 3D tile positions.
+ */
 function _pickStartTile(safeTiles, seed, playerIndex, playerCount) {
   if (!safeTiles.length) return playerIndex * 20; // fallback
-  const spread = Math.floor(safeTiles.length / playerCount);
-  return safeTiles[(seed + playerIndex * spread) % safeTiles.length];
+
+  // Cache the spread result for this seed+playerCount combo
+  const cacheKey = `${seed}_${playerCount}`;
+  if (!_pickStartTile._cache) _pickStartTile._cache = {};
+  if (!_pickStartTile._cache[cacheKey]) {
+    // Build position lookup for farthest-point sampling
+    const positions = safeTiles.map(id => ({ id, pos: getTilePosition(id) }));
+
+    // Seed the first pick deterministically
+    const first = positions[seed % positions.length];
+    const picked = [first];
+    const used = new Set([first.id]);
+
+    while (picked.length < playerCount) {
+      let bestItem = null;
+      let bestMinDist = -1;
+      for (const c of positions) {
+        if (used.has(c.id)) continue;
+        let minDist = Infinity;
+        for (const p of picked) {
+          const dx = c.pos.x - p.pos.x;
+          const dy = c.pos.y - p.pos.y;
+          const dz = c.pos.z - p.pos.z;
+          const d = dx * dx + dy * dy + dz * dz;
+          if (d < minDist) minDist = d;
+        }
+        if (minDist > bestMinDist) {
+          bestMinDist = minDist;
+          bestItem = c;
+        }
+      }
+      picked.push(bestItem);
+      used.add(bestItem.id);
+    }
+    _pickStartTile._cache[cacheKey] = picked.map(p => p.id);
+  }
+  return _pickStartTile._cache[cacheKey][playerIndex];
 }
 
 // ─── Direct P1 Integration Methods ───────────────────────────────────────────
