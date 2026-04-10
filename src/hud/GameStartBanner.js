@@ -7,6 +7,8 @@ import { on } from '../state/RenderBridge.js';
 const FONT_MONO = "'Share Tech Mono', monospace";
 const FONT_UI   = "'Rajdhani', sans-serif";
 const AUTO_HIDE_MS = 4200;
+/** Fixed above `#cs-zone-pill` (bottom 22px + pill height + gap) so tokens stay visible center-screen */
+const BANNER_BOTTOM = '96px';
 
 export function init(container) {
   const banner = _build();
@@ -31,13 +33,13 @@ export function init(container) {
 function _show(banner) {
   banner.style.display    = 'flex';
   banner.style.opacity    = '0';
-  banner.style.transform  = 'translate(-50%, -50%) translateY(22px)';
+  banner.style.transform  = 'translateX(-50%) translateY(14px)';
 
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
       banner.style.transition  = 'opacity 0.4s ease, transform 0.4s cubic-bezier(0.34,1.56,0.64,1)';
       banner.style.opacity     = '1';
-      banner.style.transform   = 'translate(-50%, -50%) translateY(0)';
+      banner.style.transform   = 'translateX(-50%) translateY(0)';
     });
   });
 }
@@ -45,7 +47,7 @@ function _show(banner) {
 function _hide(banner) {
   banner.style.transition = 'opacity 0.35s ease, transform 0.35s ease';
   banner.style.opacity    = '0';
-  banner.style.transform  = 'translate(-50%, -50%) translateY(14px)';
+  banner.style.transform  = 'translateX(-50%) translateY(10px)';
   setTimeout(() => { banner.style.display = 'none'; }, 380);
 }
 
@@ -55,9 +57,10 @@ function _build() {
   const banner = document.createElement('div');
   Object.assign(banner.style, {
     position:        'fixed',
-    top:             '50%',
     left:            '50%',
-    transform:       'translate(-50%, -50%) translateY(22px)',
+    bottom:          BANNER_BOTTOM,
+    top:             'auto',
+    transform:       'translateX(-50%) translateY(14px)',
     display:         'none',
     flexDirection:   'column',
     alignItems:      'center',
