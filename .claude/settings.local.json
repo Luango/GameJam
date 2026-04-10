@@ -16,7 +16,11 @@
       "Bash(git log:*)",
       "Bash(git clone:*)",
       "Bash(git branch:*)",
-      "Bash(git merge:*)"
+      "Bash(git merge:*)",
+      "Bash(git commit:*)",
+      "Bash(gh pr:*)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(npm --version)"
     ]
   }
 }
