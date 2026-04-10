@@ -18,7 +18,7 @@ import {
 
 // ─── Constants ───
 
-const BETTING_TIMER_MS = 20000;   // 20 seconds for betting phase
+const BETTING_TIMER_MS = 30000;   // 30 seconds for betting phase
 const MOVE_TIMER_MS = 10000;      // 10 seconds for move phase
 
 // ─── Game State ───
