@@ -176,7 +176,9 @@ export function init(container, { onLock } = {}) {
   on('onRoundStart', ({ timerDuration }) => {
     _badgeEl.className = 'live';
     _badgeEl.innerHTML = '<span id="cs-phase-dot"></span>LIVE';
-    start(timerDuration ?? DEFAULT_DURATION);
+    let dur = timerDuration ?? DEFAULT_DURATION;
+    if (dur > 100) dur = Math.round(dur / 1000); // convert ms → s if harness sends ms
+    start(dur);
   });
 
   on('onTimerSync', ({ remaining }) => {
