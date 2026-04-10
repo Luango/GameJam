@@ -19,4 +19,5 @@ export const ACTIONS = {
   MOVE_SELECTED: 'MOVE_SELECTED',  // { tileId: number }
   LOCK_IN:       'LOCK_IN',        // no payload — fired by TurnTimer on zero
   PLACE_BET:     'PLACE_BET',      // { amount: number }
+  STAY_TURN:     'STAY_TURN',      // no payload — voluntarily idle this turn (costs 1 idle strike)
 };

@@ -5,12 +5,12 @@ import {
   setSelectableTiles, clearSelectables,
   setHoveredTile, setSelectedTile, isSelectable,
   getAdjacentTileIds, getTileIdsByZone, getTilePosition,
-  spawnSparks, playClash,
+  spawnSparks, playClash, startTileCharge, stopTileCharge, spawnShockwave,
 } from '../renderer/HexGrid.js';
 import { PLAYER_COLORS } from '../constants/gameConfig.js';
 import { spawnToken, moveToken, bustToken, clearAllTokens, setPlayerModel, clearModelAssignments } from '../renderer/PlayerToken.js';
 import { addPathSegment, clearAllPaths } from '../renderer/PathTracer.js';
-import { focusOnPosition, stopAutoRotate, resumeAutoRotate } from '../renderer/SphereRenderer.js';
+import { focusOnPosition, stopAutoRotate, resumeAutoRotate, shakeCamera } from '../renderer/SphereRenderer.js';
 
 // RenderBridge — the ONLY file in P2 that reads P1 events or emits P1 actions.
 
@@ -25,6 +25,10 @@ let _playerCount   = 2;
 let _roundActive   = false;
 let _localBusted   = false;
 let _lastHoveredSelectableTile = -1;
+let _revealInProgress = false;
+
+/** Promise-based delay for sequencing async animations. */
+function _delay(ms) { return new Promise(resolve => setTimeout(resolve, ms)); }
 
 const _callbacks = {
   onReveal: [], onBust: [], onCashout: [],
@@ -150,47 +154,99 @@ function _handleRoundStart({ boardSeed, playerCount = 2, timerDuration = 30, loc
   }
 }
 
-function _handleReveal({ tileId, type, playerId, voltage }) {
+async function _handleReveal({ tileId, type, playerId, voltage }) {
   const state = type === 'safe' ? 'revealed-safe'
               : type === 'trap' ? 'revealed-trap'
               : 'reward';
 
-  setTileState(tileId, state);
-
-  // Reveal SFX — plays locally on all clients as the event fires
-  if (type === 'safe')   playSound(SFX.SAFE_REVEAL);
-  else if (type === 'reward') playSound(SFX.REWARD_REVEAL);
-  else                   playSound(SFX.TRAP_REVEAL);
-
+  // ── PHASE 1: THE WALK — move token blind ──
   const prev = _lastTile.get(playerId);
   if (prev !== undefined && prev !== tileId) {
     addPathSegment(playerId, prev, tileId);
   }
   moveToken(playerId, tileId);
   _lastTile.set(playerId, tileId);
+  focusOnPosition(getTilePosition(tileId));
 
-  if (playerId === _localPlayerId) {
-    // Local player just moved — refresh their selectable neighbours
-    _refreshSelectables(playerId);
-    stopAutoRotate();
-    focusOnPosition(getTilePosition(tileId));
-  } else {
-    // Another player moved — briefly focus on them, then let user control
-    focusOnPosition(getTilePosition(tileId));
-    resumeAutoRotate();
+  await _delay(650); // wait for token arc
+
+  // ── PHASE 2: DRUM ROLL — what did they step on? (1.4–2.0s randomised) ──
+  const drumRollMs = 1400 + Math.random() * 600;
+  const waves = 3;
+  const waveGap = drumRollMs / waves;
+
+  playSound(SFX.REVEAL_START);
+  _showVignette();
+  startTileCharge(tileId);
+
+  for (let w = 0; w < waves; w++) {
+    spawnSparks(tileId);
+    await _delay(waveGap);
   }
 
+  // ── PHASE 3: THE FLIP ──
+  stopTileCharge(tileId);
+  setTileState(tileId, state);
+
+  if (type === 'safe')   playSound(SFX.SAFE_REVEAL);
+  else if (type === 'reward') playSound(SFX.REWARD_REVEAL);
+  else                   playSound(SFX.TRAP_REVEAL);
+
+  const swColor = type === 'trap' ? 0xff3300 : type === 'reward' ? 0xffd700 : 0x00ff55;
+  spawnShockwave(tileId, swColor);
+
+  if (type === 'trap') _flashScreen('#ff2020', 0.25, 150, 600);
+  else if (type === 'reward') _flashScreen('#ffd700', 0.15, 200, 700);
+  else _flashScreen('#22c55e', 0.12, 200, 600);
+
+  await _delay(200);
+
+  // ── PHASE 4: PAYOFF ──
   _notify('onReveal', { tileId, type, playerId, voltage });
+
+  if (type === 'trap') {
+    // Dramatic bust VFX
+    shakeCamera(0.015, 500);
+    _flashScreen('#ff2020', 0.35, 100, 300);
+    setTimeout(() => _flashScreen('#ff2020', 0.20, 80, 500), 200);
+    spawnSparks(tileId);
+    setTimeout(() => spawnSparks(tileId), 120);
+    _fadeVignette(1000);
+  } else {
+    // Win celebration — always confetti on survive
+    spawnSparks(tileId);
+    setTimeout(() => spawnSparks(tileId), 150);
+    _spawnConfetti();
+    if (type === 'reward') {
+      _flashScreen('#ffd700', 0.12, 100, 800);
+    } else {
+      _flashScreen('#22c55e', 0.08, 100, 400);
+    }
+    _fadeVignette(600);
+  }
+
+  if (playerId === _localPlayerId) {
+    _refreshSelectables(playerId);
+    stopAutoRotate();
+  } else {
+    resumeAutoRotate();
+  }
 }
 
 function _handleBust({ playerId }) {
+  // Heavy bust VFX first
+  shakeCamera(0.015, 500);
+  _flashScreen('#ff2020', 0.35, 100, 300);
+  setTimeout(() => _flashScreen('#ff2020', 0.20, 80, 500), 200);
   bustToken(playerId);
+  playAnnouncement(SFX.BUST);
   if (playerId === _localPlayerId) {
     _localBusted = true;
     clearSelectables();
     resumeAutoRotate();
   }
-  _notify('onBust', { playerId });
+  // Delay bust UI so VFX plays out first
+  setTimeout(() => _notify('onBust', { playerId }), 800);
 }
 
 function _handleCashout({ playerId, voltage }) {
@@ -221,26 +277,51 @@ function _handleTimerSync({ remaining }) {
  * fades it out via CSS transition.
  */
 let _flashEl = null;
-function _flashScreen() {
+function _flashScreen(color = 'white', peakOpacity = 0.15, fadeInMs = 400, fadeOutMs = 1100) {
   if (!_flashEl) {
     _flashEl = document.createElement('div');
     Object.assign(_flashEl.style, {
       position: 'fixed',
       inset: '0',
-      background: 'white',
       pointerEvents: 'none',
       opacity: '0',
       zIndex: '9998',
     });
     document.body.appendChild(_flashEl);
   }
-  // Gentle breath: soft fade-in to a low peak, then a slow fade-out
-  _flashEl.style.transition = 'opacity 0.4s ease-in';
-  _flashEl.style.opacity = '0.15';
+  _flashEl.style.background = color;
+  _flashEl.style.transition = `opacity ${fadeInMs}ms ease-in`;
+  _flashEl.style.opacity = String(peakOpacity);
   setTimeout(() => {
-    _flashEl.style.transition = 'opacity 1.1s ease-out';
+    _flashEl.style.transition = `opacity ${fadeOutMs}ms ease-out`;
     _flashEl.style.opacity = '0';
-  }, 400);
+  }, fadeInMs);
+}
+
+// ── Vignette overlay (drama spotlight framing) ───────────────────────────────
+let _vignetteEl = null;
+function _showVignette() {
+  if (!_vignetteEl) {
+    _vignetteEl = document.createElement('div');
+    Object.assign(_vignetteEl.style, {
+      position: 'fixed',
+      inset: '0',
+      pointerEvents: 'none',
+      opacity: '0',
+      zIndex: '9997',
+      background: 'radial-gradient(ellipse at center, transparent 40%, rgba(0,0,0,0.55) 100%)',
+    });
+    document.body.appendChild(_vignetteEl);
+  }
+  _vignetteEl.style.transition = 'opacity 0.4s ease-in';
+  _vignetteEl.style.opacity = '1';
+}
+
+function _fadeVignette(fadeMs = 600) {
+  if (_vignetteEl) {
+    _vignetteEl.style.transition = `opacity ${fadeMs}ms ease-out`;
+    _vignetteEl.style.opacity = '0';
+  }
 }
 
 /**
@@ -334,10 +415,49 @@ function _refreshSelectables(playerId) {
  * Pick a starting tile from the safe zone, spreading players evenly.
  * Players always start in the safe zone (|lat| < 30°).
  */
+/**
+ * Pick maximally spread start tiles for all players, then return the one for playerIndex.
+ * Uses greedy farthest-point sampling based on 3D tile positions.
+ */
 function _pickStartTile(safeTiles, seed, playerIndex, playerCount) {
   if (!safeTiles.length) return playerIndex * 20; // fallback
-  const spread = Math.floor(safeTiles.length / playerCount);
-  return safeTiles[(seed + playerIndex * spread) % safeTiles.length];
+
+  // Cache the spread result for this seed+playerCount combo
+  const cacheKey = `${seed}_${playerCount}`;
+  if (!_pickStartTile._cache) _pickStartTile._cache = {};
+  if (!_pickStartTile._cache[cacheKey]) {
+    // Build position lookup for farthest-point sampling
+    const positions = safeTiles.map(id => ({ id, pos: getTilePosition(id) }));
+
+    // Seed the first pick deterministically
+    const first = positions[seed % positions.length];
+    const picked = [first];
+    const used = new Set([first.id]);
+
+    while (picked.length < playerCount) {
+      let bestItem = null;
+      let bestMinDist = -1;
+      for (const c of positions) {
+        if (used.has(c.id)) continue;
+        let minDist = Infinity;
+        for (const p of picked) {
+          const dx = c.pos.x - p.pos.x;
+          const dy = c.pos.y - p.pos.y;
+          const dz = c.pos.z - p.pos.z;
+          const d = dx * dx + dy * dy + dz * dz;
+          if (d < minDist) minDist = d;
+        }
+        if (minDist > bestMinDist) {
+          bestMinDist = minDist;
+          bestItem = c;
+        }
+      }
+      picked.push(bestItem);
+      used.add(bestItem.id);
+    }
+    _pickStartTile._cache[cacheKey] = picked.map(p => p.id);
+  }
+  return _pickStartTile._cache[cacheKey][playerIndex];
 }
 
 // ─── Direct P1 Integration Methods ───────────────────────────────────────────
@@ -431,12 +551,75 @@ export function handleP1TurnBegin(validMoves, timerDeadline) {
 
 /**
  * Called by GameOrchestrator on MSG.TURN_REVEAL.
+ * Orchestrates a dramatic reveal: Move → Drum Roll → Flip → Payoff.
+ * Player moves to the tile FIRST (blind), then the tile reveals what's underneath.
  * @param {object[]} results            — per-player turn results from TurnManager
  * @param {object[]} newlyRevealedTiles — [{id, tileState}]
  */
-export function handleP1TurnReveal(results, newlyRevealedTiles) {
-  // 1. Reveal tile visuals + reveal SFX (plays locally on all clients)
+export async function handleP1TurnReveal(results, newlyRevealedTiles) {
+  // Guard: if already mid-reveal, fall through to instant (prevents visual overlap)
+  if (_revealInProgress) {
+    _instantReveal(results, newlyRevealedTiles);
+    return;
+  }
+  _revealInProgress = true;
+
+  clearSelectables();
+
+  // ── PHASE 1: THE WALK (600ms) ─────────────────────────────────────────────
+  // Player tokens move to their chosen tiles BLIND — no result shown yet.
+  // This is the commitment: you've stepped on it, no going back.
+  for (const result of results) {
+    const { playerId, action, tileId } = result;
+    if (action !== 'step' || tileId == null) continue;
+
+    const slot = _playerSlots.size > 0
+      ? (_playerSlots.get(playerId) ?? 0)
+      : (typeof playerId === 'number' ? playerId : 0);
+
+    const prev = _lastTile.get(playerId);
+    if (prev !== undefined && prev !== tileId) {
+      addPathSegment(slot, prev, tileId);
+    }
+    moveToken(slot, tileId);
+    _lastTile.set(playerId, tileId);
+
+    // Camera follows local player to destination
+    if (playerId === _localPlayerId) {
+      focusOnPosition(getTilePosition(tileId));
+      stopAutoRotate();
+    }
+  }
+
+  // Wait for token arc animation to finish (MOVE_DURATION = 0.6s)
+  await _delay(650);
+
+  // ── PHASE 2: THE DRUM ROLL (2000–2800ms, randomised) ───────────────────────
+  // Player is standing on the tile. What did they step on?
+  // Charging VFX builds under their feet. Variable timing keeps it unpredictable.
+  const drumRollMs = 1400 + Math.random() * 600; // 1.4s – 2.0s
+  const waves = 3;
+  const waveGap = drumRollMs / waves;
+
+  playSound(SFX.REVEAL_START);
+  _showVignette();
+
+  for (const t of newlyRevealedTiles) startTileCharge(t.id);
+
+  // Staggered spark waves — each burst accelerates the tension
+  for (let w = 0; w < waves; w++) {
+    for (const t of newlyRevealedTiles) spawnSparks(t.id);
+    await _delay(waveGap);
+  }
+
+  // ── PHASE 3: THE FLIP (200ms) ─────────────────────────────────────────────
+  // The tile under the player cracks open — moment of truth.
+  const hasBust   = results.some(r => r.status === 'busted');
+  const hasReward = newlyRevealedTiles.some(t => t.tileState === 'reward');
+
   for (const t of newlyRevealedTiles) {
+    stopTileCharge(t.id);
+
     const state =
       t.tileState === 'trap'   ? 'revealed-trap' :
       t.tileState === 'reward' ? 'reward'         :
@@ -446,64 +629,89 @@ export function handleP1TurnReveal(results, newlyRevealedTiles) {
     if (state === 'revealed-safe') playSound(SFX.SAFE_REVEAL);
     else if (state === 'reward')   playSound(SFX.REWARD_REVEAL);
     else                           playSound(SFX.TRAP_REVEAL);
+
+    const swColor = state === 'revealed-trap' ? 0xff3300
+                  : state === 'reward'        ? 0xffd700
+                  :                             0x00ff55;
+    spawnShockwave(t.id, swColor);
   }
 
-  // 2. Process per-player results — normalise playerId to slot index for HUD maps
+  // Screen flash — color-coded emotional punch
+  if (hasBust)        _flashScreen('#ff2020', 0.30, 120, 500);
+  else if (hasReward) _flashScreen('#ffd700', 0.20, 150, 600);
+  else                _flashScreen('#22c55e', 0.15, 150, 500);
+
+  await _delay(200);
+
+  // ── PHASE 4: THE PAYOFF ───────────────────────────────────────────────────
+  // Emotional result: celebration or devastation.
+  // Collect bust/cashout notifications to fire AFTER VFX plays.
+  const deferredBusts    = [];
+  const deferredCashouts = [];
+
   for (const result of results) {
     const { playerId, action, tileId, tileState, totalVoltage, status, idleStrikes } = result;
-    // slot is the numeric index HUDs use; fall back to 0 in dev/mock mode where
-    // _playerSlots is empty and playerId is already a number
     const slot = _playerSlots.size > 0
       ? (_playerSlots.get(playerId) ?? 0)
       : (typeof playerId === 'number' ? playerId : 0);
 
     if (action === 'step' && tileId != null) {
-      const prev = _lastTile.get(playerId);
-      if (prev !== undefined && prev !== tileId) {
-        addPathSegment(slot, prev, tileId);
-      }
-      moveToken(slot, tileId);
-      _lastTile.set(playerId, tileId);
-
-      // Notify HUD with slot as playerId so HUD maps find the entry
       _notify('onReveal', {
         tileId,
-        type:     tileState === 'trap' ? 'trap' : tileState === 'reward' ? 'reward' : 'safe',
+        type: tileState === 'trap' ? 'trap' : tileState === 'reward' ? 'reward' : 'safe',
         playerId: slot,
-        voltage:  totalVoltage,
+        voltage: totalVoltage,
       });
+
+      // ── WIN: celebration VFX — confetti on every survive ──
+      if (status !== 'busted') {
+        spawnSparks(tileId);
+        setTimeout(() => spawnSparks(tileId), 150);
+        _spawnConfetti();
+
+        if (tileState === 'reward') {
+          _flashScreen('#ffd700', 0.12, 100, 800);
+        } else {
+          _flashScreen('#22c55e', 0.08, 100, 400);
+        }
+      }
     }
 
     if (status === 'busted') {
+      // ── BUST VFX: heavy shake + double red flash + grey out ──
+      shakeCamera(0.015, 500);                         // harder, longer shake
+      _flashScreen('#ff2020', 0.35, 100, 300);         // first hard red punch
+      setTimeout(() => _flashScreen('#ff2020', 0.20, 80, 500), 200); // second red aftershock
       bustToken(slot);
-      playAnnouncement(SFX.BUST); // announcement — plays on every client
+      playAnnouncement(SFX.BUST);
+      // Burst of red-tinted sparks at bust location
+      if (tileId != null) {
+        spawnSparks(tileId);
+        setTimeout(() => spawnSparks(tileId), 120);
+      }
+
       if (playerId === _localPlayerId) {
         _localBusted = true;
         clearSelectables();
         resumeAutoRotate();
       }
-      _notify('onBust', { playerId: slot });
+      // Defer bust HUD notification — show AFTER VFX has impact
+      deferredBusts.push({ playerId: slot });
     } else if (status === 'cashed_out') {
-      playAnnouncement(SFX.CASH_OUT); // announcement — plays on every client
+      playAnnouncement(SFX.CASH_OUT);
       if (playerId === _localPlayerId) {
         clearSelectables();
         resumeAutoRotate();
       }
-      _notify('onCashout', { playerId: slot, voltage: totalVoltage });
+      deferredCashouts.push({ playerId: slot, voltage: totalVoltage });
     }
 
     if (action === 'timeout' && playerId === _localPlayerId && idleStrikes != null) {
       _notify('onIdleStrikes', { count: idleStrikes });
     }
-
-    // Focus camera on local player's move
-    if (playerId === _localPlayerId && tileId != null) {
-      focusOnPosition(getTilePosition(tileId));
-    }
   }
 
   // ── Voltage Clash — fire when 2+ players land on the same tile ───────────
-  // Group isSimultaneousClaim results by tileId to find shared tiles
   const clashMap = new Map(); // tileId → slot[]
   for (const result of results) {
     if (result.isSimultaneousClaim && result.tileId != null && result.action === 'step') {
@@ -515,13 +723,76 @@ export function handleP1TurnReveal(results, newlyRevealedTiles) {
     }
   }
   clashMap.forEach((slots, tileId) => {
-    if (slots.length < 2) return; // need at least 2 players for a clash
+    if (slots.length < 2) return;
     const colors = slots.map((s) => PLAYER_COLORS[s] ?? 0xffffff);
     playClash(tileId, colors);
     _flashScreenClash();
   });
 
-  // Selectables are reset — GameOrchestrator restores them on next TURN_BEGIN
+  _fadeVignette(hasBust ? 1000 : 600);
+
+  // Let the bust VFX (shake + flash + sparks) play out before showing UI
+  if (deferredBusts.length > 0) {
+    await _delay(800); // bust VFX plays for ~800ms before overlay appears
+  }
+
+  // Now fire deferred HUD notifications
+  for (const b of deferredBusts)    _notify('onBust', b);
+  for (const c of deferredCashouts) _notify('onCashout', c);
+
+  await _delay(deferredBusts.length > 0 ? 300 : 500);
+  _revealInProgress = false;
+}
+
+/**
+ * Instant reveal fallback — used when a second reveal arrives mid-animation.
+ * Moves tokens + reveals tiles synchronously with no drama sequence.
+ */
+function _instantReveal(results, newlyRevealedTiles) {
+  // Move tokens first
+  for (const result of results) {
+    const { playerId, action, tileId } = result;
+    if (action !== 'step' || tileId == null) continue;
+    const slot = _playerSlots.size > 0
+      ? (_playerSlots.get(playerId) ?? 0)
+      : (typeof playerId === 'number' ? playerId : 0);
+    const prev = _lastTile.get(playerId);
+    if (prev !== undefined && prev !== tileId) addPathSegment(slot, prev, tileId);
+    moveToken(slot, tileId);
+    _lastTile.set(playerId, tileId);
+  }
+  // Reveal tiles
+  for (const t of newlyRevealedTiles) {
+    stopTileCharge(t.id);
+    const state =
+      t.tileState === 'trap'   ? 'revealed-trap' :
+      t.tileState === 'reward' ? 'reward'         :
+                                 'revealed-safe';
+    setTileState(t.id, state);
+  }
+  // Process results
+  for (const result of results) {
+    const { playerId, action, tileId, tileState, totalVoltage, status, idleStrikes } = result;
+    const slot = _playerSlots.size > 0
+      ? (_playerSlots.get(playerId) ?? 0)
+      : (typeof playerId === 'number' ? playerId : 0);
+
+    if (action === 'step' && tileId != null) {
+      _notify('onReveal', { tileId, type: tileState === 'trap' ? 'trap' : tileState === 'reward' ? 'reward' : 'safe', playerId: slot, voltage: totalVoltage });
+    }
+    if (status === 'busted') {
+      bustToken(slot);
+      playAnnouncement(SFX.BUST);
+      if (playerId === _localPlayerId) { _localBusted = true; clearSelectables(); resumeAutoRotate(); }
+      _notify('onBust', { playerId: slot });
+    } else if (status === 'cashed_out') {
+      playAnnouncement(SFX.CASH_OUT);
+      if (playerId === _localPlayerId) { clearSelectables(); resumeAutoRotate(); }
+      _notify('onCashout', { playerId: slot, voltage: totalVoltage });
+    }
+    if (action === 'timeout' && playerId === _localPlayerId && idleStrikes != null) _notify('onIdleStrikes', { count: idleStrikes });
+    if (playerId === _localPlayerId && tileId != null) focusOnPosition(getTilePosition(tileId));
+  }
   clearSelectables();
 }
 

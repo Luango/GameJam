@@ -134,7 +134,7 @@ function _build() {
     <div style="font-family:${FONT_MONO};font-size:10px;letter-spacing:.26em;
                 color:#00c9a7;text-transform:uppercase;opacity:0.8;
                 animation:cs-htp-glow 2s ease infinite">
-      — CIRCUIT SPHERE —
+      — VOLTEX —
     </div>
     <div style="font-family:${FONT_UI};font-size:26px;font-weight:800;
                 letter-spacing:.12em;color:#e0f2fe;line-height:1.1;
