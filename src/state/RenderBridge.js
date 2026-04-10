@@ -7,7 +7,7 @@ import {
   getAdjacentTileIds, getTileIdsByZone, getTilePosition,
   spawnSparks,
 } from '../renderer/HexGrid.js';
-import { spawnToken, moveToken, bustToken, clearAllTokens, setPlayerModel, clearModelAssignments } from '../renderer/PlayerToken.js';
+import { spawnToken, moveToken, bustToken, wobbleToken, clearAllTokens, setPlayerModel, clearModelAssignments } from '../renderer/PlayerToken.js';
 import { addPathSegment, clearAllPaths } from '../renderer/PathTracer.js';
 import { focusOnPosition, stopAutoRotate, resumeAutoRotate } from '../renderer/SphereRenderer.js';
 
