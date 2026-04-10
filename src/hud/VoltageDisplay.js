@@ -51,6 +51,36 @@ export function init(container) {
         gap: 3px;
       }
 
+      .v-zone-marker {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        padding: 3px 6px 2px;
+        margin: 2px 0 1px;
+        border-top: 1px solid rgba(255,255,255,0.06);
+      }
+
+      .v-zone-marker .v-zm-dot {
+        width: 5px; height: 5px;
+        border-radius: 50%;
+        flex-shrink: 0;
+      }
+
+      .v-zone-marker .v-zm-label {
+        font-family: 'Share Tech Mono', monospace;
+        font-size: 8px;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        flex: 1;
+      }
+
+      .v-zone-marker .v-zm-range {
+        font-family: 'Share Tech Mono', monospace;
+        font-size: 8px;
+        color: #475569;
+        letter-spacing: 0.04em;
+      }
+
       .v-step {
         display: flex;
         align-items: center;
@@ -180,13 +210,38 @@ export function init(container) {
   });
 }
 
+// Zone marker config keyed by zone name
+const ZONE_MARKER_INFO = {
+  safe:     { color: '#00c9a7', label: 'Safe',     range: '1.0–1.5×' },
+  charged:  { color: '#f59e0b', label: 'Charged',  range: '1.5–2.5×' },
+  critical: { color: '#ef4444', label: 'Critical', range: '2.5–3.0×' },
+};
+
 function _buildScale(currentVoltage) {
   _scaleEl.innerHTML = '';
+
+  // column-reverse renders bottom-to-top, so we append in ascending order
+  let prevZone = null;
   SCALE_STEPS.forEach((step) => {
+    const zone = step < 1.5 ? 'safe' : step < 2.5 ? 'charged' : 'critical';
+
+    // Insert zone marker when zone changes (or at first step)
+    if (zone !== prevZone) {
+      const m = ZONE_MARKER_INFO[zone];
+      const mDiv = document.createElement('div');
+      mDiv.className = 'v-zone-marker';
+      mDiv.innerHTML = `
+        <div class="v-zm-dot" style="background:${m.color};box-shadow:0 0 4px ${m.color}"></div>
+        <span class="v-zm-label" style="color:${m.color}">${m.label}</span>
+        <span class="v-zm-range">${m.range}</span>
+      `;
+      _scaleEl.appendChild(mDiv);
+      prevZone = zone;
+    }
+
     const div = document.createElement('div');
     div.className = 'v-step';
 
-    const zone = step < 1.5 ? 'safe' : step < 2.5 ? 'charged' : 'critical';
     const isActive = Math.abs(step - currentVoltage) < 0.15;
 
     if (isActive) {

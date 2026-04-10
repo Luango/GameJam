@@ -34,7 +34,7 @@ export function init(container) {
 
       #cs-bet .bet-title {
         font-family: 'Share Tech Mono', monospace;
-        font-size: 8px;
+        font-size: 11px;
         letter-spacing: 0.16em;
         text-transform: uppercase;
         color: #00c9a7;
@@ -53,8 +53,8 @@ export function init(container) {
         border-radius: 4px;
         color: #e2e8f0;
         font-family: 'Share Tech Mono', monospace;
-        font-size: 14px;
-        padding: 6px 10px;
+        font-size: 16px;
+        padding: 8px 12px;
         outline: none;
         transition: border-color 0.2s, box-shadow 0.2s;
       }
@@ -72,8 +72,8 @@ export function init(container) {
 
       .bet-chip {
         font-family: 'Share Tech Mono', monospace;
-        font-size: 9px;
-        padding: 3px 7px;
+        font-size: 11px;
+        padding: 4px 9px;
         border-radius: 3px;
         border: 1px solid rgba(0,201,167,0.2);
         background: rgba(0,201,167,0.05);
@@ -89,11 +89,11 @@ export function init(container) {
 
       #cs-btn-bet {
         width: 100%;
-        padding: 8px 0;
+        padding: 12px 0;
         border: none;
         border-radius: 5px;
         font-family: 'Rajdhani', sans-serif;
-        font-size: 13px;
+        font-size: 16px;
         font-weight: 700;
         letter-spacing: 0.08em;
         text-transform: uppercase;
@@ -116,7 +116,7 @@ export function init(container) {
 
       #cs-bet-info {
         font-family: 'Share Tech Mono', monospace;
-        font-size: 9px;
+        font-size: 11px;
         color: #334155;
         text-align: center;
         letter-spacing: 0.06em;

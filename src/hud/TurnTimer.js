@@ -6,7 +6,7 @@ import { ACTIONS } from '../constants/gameState.js';
 // Authority: P1 sends onTimerSync every second; P2 interpolates between ticks.
 // On zero: emits LOCK_IN to P1, disables cashout.
 
-const DEFAULT_DURATION = 30;
+const DEFAULT_DURATION = 15;
 const URGENCY_THRESHOLD = 5; // seconds
 
 let _duration  = DEFAULT_DURATION;
@@ -23,6 +23,7 @@ let _ringEl    = null;
 let _textEl    = null;
 let _labelEl   = null;
 let _panelEl   = null;
+let _badgeEl   = null;
 
 const RADIUS = 28;
 const CIRC   = 2 * Math.PI * RADIUS;
@@ -42,7 +43,55 @@ export function init(container, { onLock } = {}) {
         flex-direction: column;
         align-items: center;
         gap: 4px;
-        min-width: 100px;
+        min-width: 120px;
+      }
+
+      #cs-phase-badge {
+        font-family: 'Rajdhani', sans-serif;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.18em;
+        text-transform: uppercase;
+        color: #475569;
+        text-align: center;
+        padding: 2px 10px;
+        border-radius: 3px;
+        border: 1px solid rgba(71,85,105,0.3);
+        background: rgba(71,85,105,0.08);
+        transition: color 0.35s, border-color 0.35s, background 0.35s;
+      }
+
+      #cs-phase-badge.live {
+        color: #00c9a7;
+        border-color: rgba(0,201,167,0.4);
+        background: rgba(0,201,167,0.08);
+      }
+
+      #cs-phase-badge.ended {
+        color: #f59e0b;
+        border-color: rgba(245,158,11,0.4);
+        background: rgba(245,158,11,0.08);
+      }
+
+      #cs-phase-dot {
+        display: inline-block;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #00c9a7;
+        box-shadow: 0 0 6px #00c9a7;
+        margin-right: 5px;
+        vertical-align: middle;
+        animation: cs-phase-pulse 1s ease infinite;
+        opacity: 0;
+        transition: opacity 0.3s;
+      }
+
+      #cs-phase-badge.live #cs-phase-dot { opacity: 1; }
+
+      @keyframes cs-phase-pulse {
+        0%, 100% { opacity: 1; transform: scale(1); }
+        50%       { opacity: 0.4; transform: scale(0.7); }
       }
 
       #cs-timer .t-label {
@@ -106,6 +155,7 @@ export function init(container, { onLock } = {}) {
       }
     </style>
 
+    <div id="cs-phase-badge"><span id="cs-phase-dot"></span>LOBBY</div>
     <div class="t-label">Turn Timer</div>
     <svg width="72" height="72" viewBox="0 0 72 72">
       <circle id="cs-timer-track" cx="36" cy="36" r="${RADIUS}" />
@@ -120,9 +170,12 @@ export function init(container, { onLock } = {}) {
   _ringEl   = panel.querySelector('#cs-timer-ring');
   _textEl   = panel.querySelector('#cs-timer-text');
   _labelEl  = panel.querySelector('#cs-turn-label');
+  _badgeEl  = panel.querySelector('#cs-phase-badge');
 
   // RenderBridge callbacks
   on('onRoundStart', ({ timerDuration }) => {
+    _badgeEl.className = 'live';
+    _badgeEl.innerHTML = '<span id="cs-phase-dot"></span>LIVE';
     start(timerDuration ?? DEFAULT_DURATION);
   });
 
@@ -134,6 +187,8 @@ export function init(container, { onLock } = {}) {
     _running = false;
     _setDisplay(0);
     _labelEl.textContent = 'Round Over';
+    _badgeEl.className = 'ended';
+    _badgeEl.innerHTML = '<span id="cs-phase-dot"></span>ROUND OVER';
   });
 }
 

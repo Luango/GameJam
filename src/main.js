@@ -4,7 +4,7 @@ import * as THREE from 'three';
 window.THREE = THREE;
 
 import { init, render, getScene, getCamera } from './renderer/SphereRenderer.js';
-import { buildGrid, updateTiles }             from './renderer/HexGrid.js';
+import { buildGrid, updateTiles, setHoverCallback } from './renderer/HexGrid.js';
 import { initPathTracer }                     from './renderer/PathTracer.js';
 import { initTokens, updateTokens, getTokenPositions } from './renderer/PlayerToken.js';
 import {
@@ -103,7 +103,7 @@ Object.assign(hud.style, {
   inset:               '0',
   pointerEvents:       'none',
   display:             'grid',
-  gridTemplateColumns: '180px 1fr 220px',
+  gridTemplateColumns: '180px 1fr 180px',
   gridTemplateRows:    '1fr',
   padding:             '14px',
   gap:                 '0',
@@ -124,7 +124,7 @@ function _makeColumn(justifyContent = 'flex-start') {
 }
 
 const hudLeft   = _makeColumn('flex-start');
-const hudCenter = _makeColumn('flex-start');
+const hudCenter = _makeColumn('space-between');
 const hudRight  = _makeColumn('flex-start');
 
 hud.appendChild(hudLeft);
@@ -135,22 +135,101 @@ hud.appendChild(hudRight);
 initLeaderboard(hudLeft);
 initVoltage(hudLeft);
 
+// Timer — top of center column
 const timerWrap = document.createElement('div');
 Object.assign(timerWrap.style, { display: 'flex', justifyContent: 'center', pointerEvents: 'none' });
 hudCenter.appendChild(timerWrap);
 initTimer(timerWrap, { onLock: lockIn });
 
-const leftSpacer = document.createElement('div');
-leftSpacer.style.flex = '1';
-hudLeft.appendChild(leftSpacer);
-initBetInput(hudLeft);
+// Tile hover info panel — middle of center column, shows on tile hover
+const ZONE_INFO = {
+  safe:     { label: 'SAFE ZONE',     range: '1.0× – 1.5×', risk: 'Low Risk',    color: '#00c9a7', icon: '◎' },
+  charged:  { label: 'CHARGED ZONE',  range: '1.5× – 2.5×', risk: 'Medium Risk', color: '#f59e0b', icon: '⚡' },
+  critical: { label: 'CRITICAL ZONE', range: '2.5× – 3.0×', risk: 'High Risk',   color: '#ef4444', icon: '☢' },
+};
 
+const tileInfoEl = document.createElement('div');
+tileInfoEl.id = 'cs-tile-info';
+Object.assign(tileInfoEl.style, {
+  display:        'flex',
+  flexDirection:  'column',
+  alignItems:     'center',
+  justifyContent: 'center',
+  flex:           '1',
+  pointerEvents:  'none',
+  opacity:        '0',
+  transition:     'opacity 0.25s ease',
+});
+hudCenter.appendChild(tileInfoEl);
+
+const tileInfoInner = document.createElement('div');
+Object.assign(tileInfoInner.style, {
+  background:     'rgba(6, 14, 28, 0.85)',
+  backdropFilter: 'blur(10px)',
+  border:         '1px solid rgba(0,201,167,0.25)',
+  borderRadius:   '8px',
+  padding:        '14px 22px',
+  display:        'flex',
+  flexDirection:  'column',
+  alignItems:     'center',
+  gap:            '6px',
+  minWidth:       '240px',
+  textAlign:      'center',
+  transition:     'border-color 0.25s',
+});
+tileInfoEl.appendChild(tileInfoInner);
+
+tileInfoInner.innerHTML = `
+  <div id="cs-ti-zone" style="font-family:'Rajdhani',sans-serif;font-size:20px;font-weight:700;
+       letter-spacing:0.12em;color:#00c9a7;text-shadow:0 0 10px #00c9a7;line-height:1.1"></div>
+  <div id="cs-ti-range" style="font-family:'Share Tech Mono',monospace;font-size:15px;
+       color:#e2e8f0;letter-spacing:0.06em"></div>
+  <div id="cs-ti-risk" style="font-family:'Share Tech Mono',monospace;font-size:12px;
+       color:#64748b;letter-spacing:0.1em;text-transform:uppercase"></div>
+  <div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:#475569;
+       letter-spacing:0.08em;margin-top:2px;border-top:1px solid rgba(255,255,255,0.05);
+       padding-top:6px;width:100%">Higher risk = bigger multiplier</div>
+`;
+
+const tiZoneEl  = tileInfoInner.querySelector('#cs-ti-zone');
+const tiRangeEl = tileInfoInner.querySelector('#cs-ti-range');
+const tiRiskEl  = tileInfoInner.querySelector('#cs-ti-risk');
+
+setHoverCallback(({ zone }) => {
+  if (!zone) {
+    tileInfoEl.style.opacity = '0';
+    return;
+  }
+  const info = ZONE_INFO[zone];
+  tiZoneEl.textContent = `${info.icon}  ${info.label}`;
+  tiZoneEl.style.color = info.color;
+  tiZoneEl.style.textShadow = `0 0 10px ${info.color}`;
+  tileInfoInner.style.borderColor = `${info.color}55`;
+  tiRangeEl.textContent = info.range;
+  tiRangeEl.style.color = info.color;
+  tiRiskEl.textContent = info.risk;
+  tiRiskEl.style.color = info.color;
+  tileInfoEl.style.opacity = '1';
+});
+
+// Bet + Cashout — bottom of center column, side by side
+const centerBottom = document.createElement('div');
+centerBottom.id = 'cs-center-bottom';
+Object.assign(centerBottom.style, {
+  display:        'flex',
+  flexDirection:  'row',
+  gap:            '12px',
+  alignItems:     'flex-end',
+  pointerEvents:  'auto',
+  justifyContent: 'center',
+});
+hudCenter.appendChild(centerBottom);
+
+initBetInput(centerBottom);
+initCashout(centerBottom, { getBet });
+
+// Overview map — right column top
 initOverview(hudRight);
-
-const rightSpacer = document.createElement('div');
-rightSpacer.style.flex = '1';
-hudRight.appendChild(rightSpacer);
-initCashout(hudRight, { getBet });
 
 // Results overlay — mounts over everything, shown on onRoundEnd
 initResults(app);

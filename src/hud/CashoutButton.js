@@ -2,8 +2,8 @@ import { injectStyles } from './HudStyles.js';
 import { on, emit, getLocalPlayerId } from '../state/RenderBridge.js';
 import { ACTIONS } from '../constants/gameState.js';
 
-// CashoutButton — bottom-right panel.
-// Shows: current zone name (like "GROUND/CHARGED" from image), win amount, cash-out button.
+// CashoutButton — center-bottom panel (paired with BetInput).
+// Shows: current zone name, win amount, cash-out button.
 // Active only when round is running and local player hasn't busted/cashed.
 
 let _active    = false;
@@ -30,10 +30,10 @@ export function init(container, { getBet } = {}) {
     <style>
       #cs-cashout {
         width: 100%;
-        padding: 12px 14px;
+        padding: 14px 18px;
         display: flex;
         flex-direction: column;
-        gap: 8px;
+        gap: 10px;
       }
 
       #cs-cashout .co-balance-row {
@@ -44,7 +44,7 @@ export function init(container, { getBet } = {}) {
 
       #cs-cashout .co-bal-label {
         font-family: 'Share Tech Mono', monospace;
-        font-size: 8px;
+        font-size: 11px;
         letter-spacing: 0.14em;
         text-transform: uppercase;
         color: #475569;
@@ -52,7 +52,7 @@ export function init(container, { getBet } = {}) {
 
       #cs-cashout .co-bal-val {
         font-family: 'Share Tech Mono', monospace;
-        font-size: 12px;
+        font-size: 13px;
         color: #e2e8f0;
       }
 
@@ -60,13 +60,13 @@ export function init(container, { getBet } = {}) {
         background: rgba(251, 191, 36, 0.1);
         border: 1px solid rgba(251, 191, 36, 0.3);
         border-radius: 4px;
-        padding: 6px 10px;
+        padding: 8px 12px;
         text-align: center;
       }
 
       #cs-win-amount {
         font-family: 'Share Tech Mono', monospace;
-        font-size: 16px;
+        font-size: 22px;
         color: #fbbf24;
         text-shadow: 0 0 10px #fbbf2488;
         letter-spacing: 0.04em;
@@ -74,14 +74,14 @@ export function init(container, { getBet } = {}) {
 
       #cs-win-sub {
         font-family: 'Share Tech Mono', monospace;
-        font-size: 9px;
+        font-size: 11px;
         color: #78716c;
         margin-top: 2px;
       }
 
       #cs-zone-name {
         font-family: 'Rajdhani', sans-serif;
-        font-size: 20px;
+        font-size: 26px;
         font-weight: 700;
         letter-spacing: 0.12em;
         text-align: center;
@@ -93,7 +93,7 @@ export function init(container, { getBet } = {}) {
 
       #cs-cashout-sub {
         font-family: 'Share Tech Mono', monospace;
-        font-size: 8px;
+        font-size: 11px;
         color: #475569;
         text-align: center;
         letter-spacing: 0.1em;
@@ -101,11 +101,11 @@ export function init(container, { getBet } = {}) {
 
       #cs-btn-cashout {
         width: 100%;
-        padding: 9px 0;
+        padding: 14px 0;
         border: none;
         border-radius: 5px;
         font-family: 'Rajdhani', sans-serif;
-        font-size: 14px;
+        font-size: 18px;
         font-weight: 700;
         letter-spacing: 0.1em;
         text-transform: uppercase;
@@ -131,7 +131,7 @@ export function init(container, { getBet } = {}) {
 
       #cs-current-win {
         font-family: 'Share Tech Mono', monospace;
-        font-size: 9px;
+        font-size: 11px;
         color: #475569;
         text-align: center;
         letter-spacing: 0.08em;

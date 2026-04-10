@@ -15,14 +15,25 @@ const _tiles = new Map(); // tileId → { mesh, zone, state, animData, center?, 
 // P1 board reference — set by buildFromBoard, null in standalone/dev mode
 let _p1Board = null;
 
-// ── Selectable tile overlay rings ─────────────────────────────────────────────
-const _rings = new Map(); // tileId → THREE.Mesh ring
+// ── Selectable tile overlay discs ─────────────────────────────────────────────
+const _rings = new Map(); // tileId → THREE.Mesh disc
 let _hoveredId  = -1;
 let _selectedId = -1;
 
-const RING_COLOR_DEFAULT  = 0x38bdf8;
-const RING_COLOR_HOVER    = 0xffffff;
-const RING_COLOR_SELECTED = 0x00c9a7;
+// Hover callback — called when hovered tile changes
+let _onHoverChange = null;
+
+const DISC_COLOR_DEFAULT  = 0x38bdf8;
+const DISC_COLOR_HOVER    = 0xffffff;
+const DISC_COLOR_SELECTED = 0x00c9a7;
+
+/**
+ * Register a callback that fires when the hovered selectable tile changes.
+ * @param {function} fn  — called with { tileId, zone } (zone=null when none)
+ */
+export function setHoverCallback(fn) {
+  _onHoverChange = fn;
+}
 
 // Spherical Fibonacci distribution — roughly uniform coverage of the sphere
 function _fibonacciSphere(count) {
@@ -80,7 +91,7 @@ export function buildFromBoard(board, scene, sourceRadius = 6) {
       (v) => new THREE.Vector3(v.x, v.y, v.z).multiplyScalar(scale)
     );
 
-    // Visual size from actual vertex extent (needed for rings)
+    // Visual size from actual vertex extent (needed for discs)
     const tileRadius = verts.reduce((max, v) => Math.max(max, center.distanceTo(v)), 0);
 
     // Shrink vertices toward center for gap effect (same as sphere-renderer.js)
@@ -181,7 +192,7 @@ export function setTileState(tileId, state) {
 }
 
 /**
- * Call each frame from the render loop to drive tile + ring animations.
+ * Call each frame from the render loop to drive tile + disc animations.
  * @param {number} now  — performance.now() timestamp
  */
 export function updateTiles(now) {
@@ -207,18 +218,23 @@ export function updateTiles(now) {
     }
   });
 
-  // Animate selectable rings
+  // Animate selectable discs
   const t = now / 1000;
-  _rings.forEach((ring, id) => {
+  _rings.forEach((disc, id) => {
+    const tile = _tiles.get(id);
     if (id === _selectedId) {
-      ring.material.opacity = 0.9;
-      ring.material.color.set(RING_COLOR_SELECTED);
+      disc.material.opacity = 0.55;
+      disc.material.color.set(DISC_COLOR_SELECTED);
+      if (tile) tile.mesh.material.emissiveIntensity = 0.5;
     } else if (id === _hoveredId) {
-      ring.material.opacity = 1.0;
-      ring.material.color.set(RING_COLOR_HOVER);
+      disc.material.opacity = 0.65;
+      disc.material.color.set(DISC_COLOR_HOVER);
+      if (tile) tile.mesh.material.emissiveIntensity = 0.7;
     } else {
-      ring.material.opacity = 0.35 + 0.3 * Math.sin(t * 2.5 + id * 0.8);
-      ring.material.color.set(RING_COLOR_DEFAULT);
+      disc.material.opacity = 0.15 + 0.12 * Math.sin(t * 2.5 + id * 0.8);
+      disc.material.color.set(DISC_COLOR_DEFAULT);
+      // Restore emissive for non-hovered/selected tiles (only if state is 'hidden')
+      if (tile && tile.state === 'hidden') tile.mesh.material.emissiveIntensity = 0;
     }
   });
 }
@@ -245,30 +261,30 @@ export function resetGrid() {
   _tiles.forEach((tile, id) => setTileState(id, 'hidden'));
 }
 
-// ── Selectable tile rings ─────────────────────────────────────────────────────
+// ── Selectable tile filled discs ──────────────────────────────────────────────
 
-function _buildRing(tile) {
-  // Use stored tileRadius (P1 board) or fallback constant (Fibonacci grid)
+function _buildDisc(tile) {
+  // Filled disc sized to fit inside the tile face (0.85× tileRadius)
   const r  = tile.tileRadius ?? TILE_RADIUS;
-  const geo = new THREE.RingGeometry(r * 1.1, r * 1.55, tile.tileRadius ? 6 : 6);
+  const geo = new THREE.CircleGeometry(r * 0.85, tile.tileRadius ? 6 : 6);
   const mat = new THREE.MeshBasicMaterial({
-    color: RING_COLOR_DEFAULT,
+    color: DISC_COLOR_DEFAULT,
     side: THREE.DoubleSide,
     transparent: true,
-    opacity: 0.7,
+    opacity: 0.25,
     depthTest: false,
   });
-  const ring = new THREE.Mesh(geo, mat);
-  // Use stored center for P1 tiles; mesh.position for Fibonacci tiles
+  const disc = new THREE.Mesh(geo, mat);
+  // Sit just above tile surface to avoid z-fighting
   const center = tile.center ?? tile.mesh.position;
-  ring.position.copy(center).multiplyScalar(1.006);
-  ring.lookAt(0, 0, 0);
-  ring.rotateX(Math.PI);
-  return ring;
+  disc.position.copy(center).multiplyScalar(1.004);
+  disc.lookAt(0, 0, 0);
+  disc.rotateX(Math.PI);
+  return disc;
 }
 
 /**
- * Highlight a set of tiles as selectable (ring overlay + cursor change).
+ * Highlight a set of tiles as selectable (disc overlay + cursor change).
  * @param {number[]} tileIds
  */
 export function setSelectableTiles(tileIds) {
@@ -276,21 +292,21 @@ export function setSelectableTiles(tileIds) {
   tileIds.forEach((id) => {
     const tile = _tiles.get(id);
     if (!tile) return;
-    const ring = _buildRing(tile);
-    _scene.add(ring);
-    _rings.set(id, ring);
+    const disc = _buildDisc(tile);
+    _scene.add(disc);
+    _rings.set(id, disc);
   });
   // Cursor hint on canvas
   const cv = document.getElementById('canvas');
   if (cv) cv.style.cursor = tileIds.length ? 'crosshair' : 'default';
 }
 
-/** Remove all selectable rings. */
+/** Remove all selectable discs. */
 export function clearSelectables() {
-  _rings.forEach((ring) => {
-    ring.geometry.dispose();
-    ring.material.dispose();
-    _scene.remove(ring);
+  _rings.forEach((disc) => {
+    disc.geometry.dispose();
+    disc.material.dispose();
+    _scene.remove(disc);
   });
   _rings.clear();
   _hoveredId  = -1;
@@ -307,10 +323,13 @@ export function setHoveredTile(tileId) {
   _hoveredId = _rings.has(tileId) ? tileId : -1;
   const cv = document.getElementById('canvas');
   if (cv) cv.style.cursor = _hoveredId !== -1 ? 'pointer' : 'crosshair';
+
+  const zone = _hoveredId !== -1 ? (_tiles.get(_hoveredId)?.zone ?? null) : null;
+  _onHoverChange?.({ tileId: _hoveredId, zone });
 }
 
 /**
- * Mark a tile as selected (turns ring teal, others dim).
+ * Mark a tile as selected (turns disc teal, others dim).
  * @param {number} tileId
  */
 export function setSelectedTile(tileId) {
