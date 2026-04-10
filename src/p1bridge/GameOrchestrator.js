@@ -44,6 +44,9 @@ let _bettingTimeout = null;
 /** Last bet-phase roster (bankroll caps for clients). */
 let _bettingRoster = [];
 
+/** Client-only: bankroll after wager deducted at GAME_START; updated on cashout at ROUND_END. */
+let _clientDisplayBankroll = INITIAL_BANKROLL;
+
 /** Increments when host starts a new match; shown in ROUND_END as roundNumber. */
 let _matchDisplayNumber = 1;
 
@@ -146,6 +149,13 @@ export function getLocalId() { return _localId; }
 export function getIsHost() { return _isHost; }
 export function getPhase() { return _phase; }
 
+/** Local player's CR balance for HUD (betting cap during BETTING; wallet during play). */
+export function getLocalBankroll() {
+  if (_phase === PHASE.BETTING) return _localBankrollCap();
+  if (_isHost && _localId && _players[_localId]) return _players[_localId].bankroll;
+  return _clientDisplayBankroll;
+}
+
 /**
  * Host only, after a finished match: same room, lobby + ready → betting again.
  */
@@ -178,6 +188,7 @@ export function leaveRoom() {
   _players = {};
   _pendingBets = {};
   _bettingRoster = [];
+  _clientDisplayBankroll = INITIAL_BANKROLL;
   _phase = PHASE.LOBBY;
   _isHost = false;
   _localId = null;
@@ -415,6 +426,11 @@ function _onGameStart_msg(msg) {
   buildFromBoard(_board, getScene());
 
   const bets = msg.bets || {};
+  if (!_isHost && _localId) {
+    const me = msg.playerOrder?.find((p) => p.id === _localId);
+    if (me && typeof me.bankroll === 'number') _clientDisplayBankroll = me.bankroll;
+  }
+
   handleP1RoundStart(msg.playerOrder, _localId, bets);
 
   _onGameStart();
@@ -446,6 +462,11 @@ function _onRoundEnd_msg(msg) {
       if (p && r.status === 'cashed_out' && (r.payout ?? 0) > 0) {
         p.bankroll += r.payout;
       }
+    }
+  } else if (!_isHost && msg.results && _localId) {
+    const r = msg.results.find((x) => x.id === _localId);
+    if (r?.status === 'cashed_out' && (r.payout ?? 0) > 0) {
+      _clientDisplayBankroll += r.payout;
     }
   }
   handleP1RoundEnd(msg.results, msg.leaderboard, msg.roundNumber ?? 1);

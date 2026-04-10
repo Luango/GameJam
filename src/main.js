@@ -35,6 +35,7 @@ import {
   init as initBetInput,
   enterBettingPhase,
   getBet,
+  refreshBalance as refreshBetBalance,
 } from './hud/BetInput.js';
 import { init as initOverview, updateMap } from './hud/OverviewMap.js';
 import { init as initLobby }               from './hud/LobbyOverlay.js';
@@ -51,6 +52,7 @@ import {
   getLocalId,
   getPhase,
   getIsHost,
+  getLocalBankroll,
   hostStartNewGame,
   leaveRoom,
   PHASE,
@@ -91,11 +93,13 @@ initOrchestrator(eventBus, {
     _lobbyControls?.hide();
     _betPhaseBanner.show();
     enterBettingPhase();
+    refreshBetBalance();
     showBettingRoster(playerList, getLocalId());
     startBettingCountdown(timerDeadline);
   },
   onBettingPhaseUpdate: (playerList) => {
     updateBettingRoster(playerList);
+    refreshBetBalance();
   },
   onBettingAbortedToLobby: () => {
     _betPhaseBanner.hide();
@@ -233,6 +237,7 @@ document.head.appendChild(betCashoutOverride);
 initBetInput(betCashoutShell, {
   submitBet: (amt) => submitBet(amt),
   isBettingPhase: () => getPhase() === PHASE.BETTING,
+  getBankroll: () => getLocalBankroll(),
 });
 initCashout(betCashoutShell, { getBet });
 
