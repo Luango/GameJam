@@ -1,10 +1,11 @@
 import { EVENTS, ACTIONS } from '../constants/gameState.js';
-import { playSound } from '../audio/AudioManager.js';
+import { playSound, playAnnouncement, SFX } from '../audio/AudioManager.js';
 import {
   setTileState, resetGrid, pickTile,
   setSelectableTiles, clearSelectables,
   setHoveredTile, setSelectedTile, isSelectable,
   getAdjacentTileIds, getTileIdsByZone, getTilePosition,
+  spawnSparks,
 } from '../renderer/HexGrid.js';
 import { spawnToken, moveToken, bustToken, clearAllTokens } from '../renderer/PlayerToken.js';
 import { addPathSegment, clearAllPaths } from '../renderer/PathTracer.js';
@@ -82,6 +83,8 @@ export function handleTilePick(ndcPoint, camera) {
   if (tileId === -1) return;
   if (!isSelectable(tileId)) return; // must be an adjacent tile
   setSelectedTile(tileId);
+  playSound(SFX.LOCK_IN);   // local only
+  spawnSparks(tileId);       // local only
   emit(ACTIONS.MOVE_SELECTED, { tileId });
 }
 
@@ -95,7 +98,7 @@ export function handleHover(ndcPoint, camera) {
   if (tileId !== -1 && !_localBusted && isSelectable(tileId)) {
     if (tileId !== _lastHoveredSelectableTile) {
       _lastHoveredSelectableTile = tileId;
-      playSound('assets/sfx/Hover select tile.mp3');
+      playSound(SFX.HOVER);
     }
   } else {
     _lastHoveredSelectableTile = -1;
@@ -139,7 +142,11 @@ function _handleRoundStart({ boardSeed, playerCount = 2, timerDuration = 30, loc
 
   const canStep = !_localBusted;
   _notify('onPlayTurn', { canStep, spectating: _localBusted });
-  if (canStep) _notify('onLocalMoveTurn', {});
+  if (canStep) {
+    playSound(SFX.TURN_START); // local only — it's this player's action turn
+    _flashScreen();
+    _notify('onLocalMoveTurn', {});
+  }
 }
 
 function _handleReveal({ tileId, type, playerId, voltage }) {
@@ -148,6 +155,11 @@ function _handleReveal({ tileId, type, playerId, voltage }) {
               : 'reward';
 
   setTileState(tileId, state);
+
+  // Reveal SFX — plays locally on all clients as the event fires
+  if (type === 'safe')   playSound(SFX.SAFE_REVEAL);
+  else if (type === 'reward') playSound(SFX.REWARD_REVEAL);
+  else                   playSound(SFX.TRAP_REVEAL);
 
   const prev = _lastTile.get(playerId);
   if (prev !== undefined && prev !== tileId) {
@@ -181,6 +193,7 @@ function _handleBust({ playerId }) {
 }
 
 function _handleCashout({ playerId, voltage }) {
+  playAnnouncement(SFX.CASH_OUT); // plays for all clients
   if (playerId === _localPlayerId) {
     clearSelectables();
     resumeAutoRotate();
@@ -200,6 +213,85 @@ function _handleTimerSync({ remaining }) {
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/**
+ * Brief white breath flash — signals the start of the local player's action turn.
+ * Creates (or reuses) a fixed overlay div, snaps it to semi-opaque white, then
+ * fades it out via CSS transition.
+ */
+let _flashEl = null;
+function _flashScreen() {
+  if (!_flashEl) {
+    _flashEl = document.createElement('div');
+    Object.assign(_flashEl.style, {
+      position: 'fixed',
+      inset: '0',
+      background: 'white',
+      pointerEvents: 'none',
+      opacity: '0',
+      zIndex: '9998',
+    });
+    document.body.appendChild(_flashEl);
+  }
+  // Gentle breath: soft fade-in to a low peak, then a slow fade-out
+  _flashEl.style.transition = 'opacity 0.4s ease-in';
+  _flashEl.style.opacity = '0.15';
+  setTimeout(() => {
+    _flashEl.style.transition = 'opacity 1.1s ease-out';
+    _flashEl.style.opacity = '0';
+  }, 400);
+}
+
+// ─── Confetti ─────────────────────────────────────────────────────────────────
+const _CONFETTI_COLORS = [
+  '#FFD700', '#FFA500', '#FF6B6B', '#4ECDC4',
+  '#45B7D1', '#A78BFA', '#F472B6', '#86EFAC',
+];
+
+function _spawnConfetti() {
+  // Inject keyframes once
+  if (!document.getElementById('cs-confetti-style')) {
+    const s = document.createElement('style');
+    s.id = 'cs-confetti-style';
+    s.textContent = `
+      @keyframes cs-confetti-fall {
+        0%   { transform: translateY(-10px) rotate(0deg)   scaleX(1);   opacity: 1; }
+        50%  { scaleX(-1); }
+        100% { transform: translateY(105vh) rotate(780deg) scaleX(-1);  opacity: 0; }
+      }
+    `;
+    document.head.appendChild(s);
+  }
+
+  const wrap = document.createElement('div');
+  Object.assign(wrap.style, {
+    position: 'fixed', inset: '0',
+    pointerEvents: 'none', zIndex: '9997', overflow: 'hidden',
+  });
+  document.body.appendChild(wrap);
+
+  for (let i = 0; i < 90; i++) {
+    const el = document.createElement('div');
+    const w  = 5 + Math.random() * 7;
+    const h  = Math.random() > 0.45 ? w : w * 0.35; // mix squares + ribbons
+    const dur   = 1.4 + Math.random() * 1.4;
+    const delay = Math.random() * 0.6;
+    const color = _CONFETTI_COLORS[Math.floor(Math.random() * _CONFETTI_COLORS.length)];
+    Object.assign(el.style, {
+      position:     'absolute',
+      top:          '-12px',
+      left:         `${Math.random() * 100}%`,
+      width:        `${w}px`,
+      height:       `${h}px`,
+      background:   color,
+      borderRadius: h === w ? '2px' : '1px',
+      animation:    `cs-confetti-fall ${dur}s ease-in ${delay}s forwards`,
+    });
+    wrap.appendChild(el);
+  }
+
+  setTimeout(() => wrap.remove(), 3600);
+}
 
 /** Show selectable (adjacent) tiles for a player. */
 function _refreshSelectables(playerId) {
@@ -293,7 +385,11 @@ export function handleP1TurnBegin(validMoves, timerDeadline) {
 
   const canStep = validMoves.length > 0 && !_localBusted;
   _notify('onPlayTurn', { canStep, spectating: _localBusted });
-  if (canStep) _notify('onLocalMoveTurn', {});
+  if (canStep) {
+    playSound(SFX.TURN_START); // local only — it's this player's action turn
+    _flashScreen();
+    _notify('onLocalMoveTurn', {});
+  }
 }
 
 /**
@@ -302,13 +398,17 @@ export function handleP1TurnBegin(validMoves, timerDeadline) {
  * @param {object[]} newlyRevealedTiles — [{id, tileState}]
  */
 export function handleP1TurnReveal(results, newlyRevealedTiles) {
-  // 1. Reveal tile visuals
+  // 1. Reveal tile visuals + reveal SFX (plays locally on all clients)
   for (const t of newlyRevealedTiles) {
     const state =
       t.tileState === 'trap'   ? 'revealed-trap' :
       t.tileState === 'reward' ? 'reward'         :
                                  'revealed-safe';
     setTileState(t.id, state);
+
+    if (state === 'revealed-safe') playSound(SFX.SAFE_REVEAL);
+    else if (state === 'reward')   playSound(SFX.REWARD_REVEAL);
+    else                           playSound(SFX.TRAP_REVEAL);
   }
 
   // 2. Process per-player results — normalise playerId to slot index for HUD maps
@@ -339,7 +439,7 @@ export function handleP1TurnReveal(results, newlyRevealedTiles) {
 
     if (status === 'busted') {
       bustToken(slot);
-      playSound('assets/sfx/Bust.mp3');
+      playAnnouncement(SFX.BUST); // announcement — plays on every client
       if (playerId === _localPlayerId) {
         _localBusted = true;
         clearSelectables();
@@ -347,6 +447,7 @@ export function handleP1TurnReveal(results, newlyRevealedTiles) {
       }
       _notify('onBust', { playerId: slot });
     } else if (status === 'cashed_out') {
+      playAnnouncement(SFX.CASH_OUT); // announcement — plays on every client
       if (playerId === _localPlayerId) {
         clearSelectables();
         resumeAutoRotate();

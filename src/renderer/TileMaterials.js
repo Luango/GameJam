@@ -11,24 +11,24 @@ const _materials = {
   critical: null,
 };
 
-// State-variant emissive colours (applied on top of base zone material via clone)
-const STATE_EMISSIVE = {
-  hidden:         { color: 0x000000, intensity: 0 },
-  'revealed-safe':  { color: 0x00c9a7, intensity: 0.6 },
-  'revealed-trap':  { color: 0x111111, intensity: 0 },
-  reward:         { color: 0xffd700, intensity: 1.2 },
+// Full visual override per revealed state.
+// 'hidden' is handled separately in applyState (self-illuminates with zone colour).
+const STATE_LOOK = {
+  'revealed-safe': { tileColor: 0x22c55e, emissive: 0x00ff55, intensity: 0.9,  opacity: 1.0 },
+  'revealed-trap': { tileColor: 0xff2020, emissive: 0xff0000, intensity: 0.75, opacity: 1.0 },
+  reward:          { tileColor: 0xffd700, emissive: 0xffaa00, intensity: 1.3,  opacity: 1.0 },
 };
 
 function _makeMaterial(color) {
   return new THREE.MeshStandardMaterial({
     color,
-    roughness: 0.10,
-    metalness: 0.35,
+    roughness: 0.18,
+    metalness: 0.20,
     emissive: new THREE.Color(0x000000),
     emissiveIntensity: 0,
     transparent: true,
-    opacity: 0.60,
-    depthWrite: false,
+    opacity: 0.92,
+    depthWrite: true,
   });
 }
 
@@ -54,15 +54,17 @@ export function getMaterial(zone, state = 'hidden') {
  * Apply a state's emissive settings onto an existing material instance.
  */
 export function applyState(material, state) {
-  if (state === 'hidden') {
-    // Self-illuminate with the tile's own zone colour so it's always visible
-    // regardless of which way it faces relative to the lights.
+  const s = STATE_LOOK[state];
+  if (!s) {
+    // 'hidden' or unrecognised → self-illuminate with zone colour so all hidden tiles look uniform
     material.emissive.copy(material.color);
-    material.emissiveIntensity = 0.4;
+    material.emissiveIntensity = 0.55;
+    material.opacity = 0.92;
   } else {
-    const s = STATE_EMISSIVE[state] ?? STATE_EMISSIVE.hidden;
-    material.emissive.set(s.color);
+    material.color.set(s.tileColor);
+    material.emissive.set(s.emissive);
     material.emissiveIntensity = s.intensity;
+    material.opacity = s.opacity;
   }
 }
 
