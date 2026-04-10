@@ -104,10 +104,9 @@ export function generateBoard(seed, config = DEFAULT_CONFIG) {
     // else stays SAFE
   }
 
-  // Step 5: Determine starting tiles (equatorial safe zone, closest to equator)
+  // Step 5: Determine starting tiles — pick 8 maximally spread safe-zone tiles
   const safeTiles = tiles.filter(t => t.zone === ZONE.SAFE);
-  safeTiles.sort((a, b) => Math.abs(a.center.y) - Math.abs(b.center.y));
-  const startTiles = safeTiles.slice(0, Math.min(8, safeTiles.length)).map(t => t.id);
+  const startTiles = _pickSpreadTiles(safeTiles, 8).map(t => t.id);
 
   // Ensure start tiles are always safe (never traps)
   for (const stId of startTiles) {
@@ -123,6 +122,41 @@ export function generateBoard(seed, config = DEFAULT_CONFIG) {
   };
 
   return { tiles, startTiles, zoneRings };
+}
+
+// ─── Greedy farthest-point sampling ───
+// Picks `count` tiles from `pool` that are maximally spread apart on the sphere.
+function _pickSpreadTiles(pool, count) {
+  if (pool.length <= count) return pool.slice();
+
+  // Start with the tile closest to equator as first pick
+  const sorted = pool.slice().sort((a, b) => Math.abs(a.center.y) - Math.abs(b.center.y));
+  const picked = [sorted[0]];
+  const used = new Set([sorted[0].id]);
+
+  while (picked.length < count) {
+    let bestTile = null;
+    let bestMinDist = -1;
+    for (const candidate of pool) {
+      if (used.has(candidate.id)) continue;
+      // Find the minimum distance from this candidate to any already-picked tile
+      let minDist = Infinity;
+      for (const p of picked) {
+        const dx = candidate.center.x - p.center.x;
+        const dy = candidate.center.y - p.center.y;
+        const dz = candidate.center.z - p.center.z;
+        const d = dx * dx + dy * dy + dz * dz;
+        if (d < minDist) minDist = d;
+      }
+      if (minDist > bestMinDist) {
+        bestMinDist = minDist;
+        bestTile = candidate;
+      }
+    }
+    picked.push(bestTile);
+    used.add(bestTile.id);
+  }
+  return picked;
 }
 
 // ─── Icosahedron Dual Algorithm ───
@@ -301,16 +335,13 @@ export function getValidMoves(board, currentTileId, visitedTileIds = []) {
 
 /**
  * Pick N spread-out start tiles for players from the startTiles pool.
+ * Uses greedy farthest-point sampling on the pre-spread pool.
  */
 export function pickStartTiles(board, playerCount) {
   const pool = board.startTiles;
   if (playerCount >= pool.length) return pool.slice(0, playerCount);
 
-  // Spread players evenly across the start pool
-  const step = Math.floor(pool.length / playerCount);
-  const result = [];
-  for (let i = 0; i < playerCount; i++) {
-    result.push(pool[(i * step) % pool.length]);
-  }
-  return result;
+  // Use farthest-point sampling on the pool tiles
+  const tiles = pool.map(id => board.tiles[id]);
+  return _pickSpreadTiles(tiles, playerCount).map(t => t.id);
 }

@@ -10,7 +10,7 @@ const TOKEN_RADIUS = 0.04;
 const FLOAT_AMPLITUDE = 0.008;
 const FLOAT_SPEED = 1.8;
 const MOVE_DURATION = 0.6; // seconds for arc animation
-const SURFACE_OFFSET = 1.06; // multiplier to float above hex surface
+const SURFACE_OFFSET = 1.03; // multiplier to float above hex surface
 
 let _scene = null;
 
