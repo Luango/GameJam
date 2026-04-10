@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { ZONE_BANDS, TILE_COUNT } from '../constants/gameConfig.js';
 import { initMaterials, getMaterial, applyState } from './TileMaterials.js';
+import * as ZoneLabels from './ZoneLabels.js';
 
 // HexGrid — hex tile mesh projected onto sphere surface.
 // Owns the tile state machine: hidden → revealed-safe | revealed-trap | reward.
@@ -191,6 +192,8 @@ export function buildFromBoard(board, scene, sourceRadius = 6) {
 
     _tiles.set(tile.id, { mesh, zone, state: 'hidden', animData: {}, center, tileRadius });
   }
+
+  ZoneLabels.build(scene);
 }
 
 /**
@@ -223,6 +226,8 @@ export function buildGrid(scene) {
 
     _tiles.set(i, { mesh, zone, state: 'hidden', animData: {} });
   });
+
+  ZoneLabels.build(scene);
 }
 
 /**
