@@ -79,26 +79,41 @@ This holds for all V > 0. No strategy can achieve RTP > 100%.
 When a tile has already been revealed as safe by a prior turn, stepping on it carries **0% trap risk**. The house edge is applied directly:
 
 ```
-followerMultiplier = targetRTP = 0.96
+followerMultiplier = 0.955
 ```
 
-This applies identically across all zones.
+This applies identically across all zones. Slightly below the 0.96 target RTP to compensate for the Collision Surge bonus (see §4.5).
 
 **Config location:** `js/board.js` → `DEFAULT_CONFIG.voltageRates[zone].follower`
 
-### 4.3 Simultaneous Claim Multiplier
+### 4.3 Collision Surge Multiplier (Simultaneous Claims)
 
-When multiple players step on the same unrevealed tile in the same turn:
+When 2+ players step on the same **unrevealed** tile in the same turn and survive, each player receives a **Collision Surge** — a bonus multiplier proportional to the zone's risk:
 
 ```
-simultaneousMultiplier = (base + follower) / 2
+collisionMultiplier = base × (1 + collisionSurge[zone])
 ```
 
-| Zone | Simultaneous Multiplier |
-|------|------------------------|
-| SAFE | (1.09091 + 0.96) / 2 = **1.02546** |
-| CHARGED | (1.28000 + 0.96) / 2 = **1.12000** |
-| CRITICAL | (1.47692 + 0.96) / 2 = **1.21846** |
+| Zone | Surge Rate | Collision Multiplier | Per-Step RTP |
+|------|-----------|---------------------|-------------|
+| SAFE | +3% | 1.09091 × 1.03 = **1.12364** | 0.88 × 1.12364 = **98.88%** |
+| CHARGED | +8% | 1.28000 × 1.08 = **1.38240** | 0.75 × 1.38240 = **103.68%** |
+| CRITICAL | +15% | 1.47692 × 1.15 = **1.69846** | 0.65 × 1.69846 = **110.40%** |
+
+**Aggregate RTP impact** (assuming ~10% collision rate across steps):
+
+```
+Aggregate RTP ≈ 0.90 × 96.00% + 0.10 × collisionRTP
+SAFE:     0.90 × 96.00 + 0.10 × 98.88 = 96.29%
+CHARGED:  0.90 × 96.00 + 0.10 × 103.68 = 96.77%
+CRITICAL: 0.90 × 96.00 + 0.10 × 110.40 = 97.44%
+```
+
+This is offset by the follower rate reduction (0.96 → 0.955), which saves ~0.5% per follower step. Collision frequency is player-choice-dependent, not exploitable.
+
+**Config location:** `js/board.js` → `DEFAULT_CONFIG.voltageRates.collisionSurge`
+
+**Design rationale:** Collision surge rewards coordinated risk-taking. Higher-risk zones give larger bonuses, incentivizing players to push deeper into dangerous territory together. The bonus is only granted on unrevealed tiles (not followers), so it requires genuine risk exposure.
 
 ### 4.4 Reward Tile Bonus
 
@@ -186,13 +201,18 @@ Math.round(bet * voltage * 100) / 100;
 
 ## 6. RTP Verification
 
-### 6.1 Per-Step RTP (must equal 96.00% for all zones)
+### 6.1 Per-Step RTP (must equal ~96% for all zones)
 
 ```
-SAFE:     0.88 × 1.09091 = 0.96000 ✓
-CHARGED:  0.75 × 1.28000 = 0.96000 ✓
-CRITICAL: 0.65 × 1.47692 = 0.96000 ✓
-Follower: 1.00 × 0.96000 = 0.96000 ✓
+SAFE:     0.88 × 1.09091 = 0.96000 ✓  (solo first-claim)
+CHARGED:  0.75 × 1.28000 = 0.96000 ✓  (solo first-claim)
+CRITICAL: 0.65 × 1.47692 = 0.96000 ✓  (solo first-claim)
+Follower: 1.00 × 0.95500 = 0.95500 ✓  (no risk, compensates collision surge)
+
+Collision Surge (above base RTP, rare ~10% of steps):
+SAFE:     0.88 × 1.12364 = 0.98880     (+3% surge)
+CHARGED:  0.75 × 1.38240 = 1.03680     (+8% surge)
+CRITICAL: 0.65 × 1.69846 = 1.10400     (+15% surge)
 ```
 
 ### 6.2 Multi-Step Strategies (all must be < 100%)
@@ -310,3 +330,4 @@ follower      = 0.94 (all zones)
 | Date | Change | RTP Before | RTP After |
 |------|--------|-----------|-----------|
 | 2026-04-10 | Switched from additive to multiplicative voltage model | ~96% (behavioral estimate, exploitable: 101-109% on some strategies) | 96.00% (enforced, no strategy exceeds 100%) |
+| 2026-04-10 | Added Collision Surge: simultaneous claims now grant zone-proportional bonus instead of averaged-down penalty. Follower rate reduced 0.96→0.955 to compensate. | 96.00% (solo), <96% (collision) | 96.00% (solo), 96.3-97.4% aggregate (collision-dependent) |

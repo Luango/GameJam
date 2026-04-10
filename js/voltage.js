@@ -47,8 +47,9 @@ export function calculateStepVoltage(
     baseMultiplier = zoneRates.follower; // 0.96
     resistanceApplied = true;
   } else if (isSimultaneous && simultaneousCount > 1) {
-    // Simultaneous claim: average of base and follower multipliers
-    baseMultiplier = (zoneRates.base + zoneRates.follower) / 2;
+    // Collision Surge: base multiplier boosted by zone-specific surge percentage
+    const surgeRate = rates.collisionSurge?.[zone] ?? 0;
+    baseMultiplier = zoneRates.base * (1 + surgeRate);
   } else {
     // First claimer: full step multiplier
     baseMultiplier = zoneRates.base;
@@ -74,6 +75,9 @@ export function calculateStepVoltage(
       base: baseMultiplier,
       reward: rewardMultiplier,
       resistance: resistanceApplied,
+      collisionSurge: (isSimultaneous && simultaneousCount > 1 && !isFollower)
+        ? (rates.collisionSurge?.[zone] ?? 0)
+        : 0,
     },
   };
 }

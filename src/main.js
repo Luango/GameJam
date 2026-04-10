@@ -28,7 +28,7 @@ import {
   startBettingCountdown,
   stopBettingCountdown,
 } from './hud/TurnTimer.js';
-import { init as initCashout, lockIn }     from './hud/CashoutButton.js';
+import { init as initCashout }              from './hud/CashoutButton.js';
 import {
   init as initLeaderboard,
   showBettingRoster,
@@ -273,7 +273,7 @@ Object.assign(timerWrap.style, {
   zIndex:        '340',
 });
 app.appendChild(timerWrap);
-initTimer(timerWrap, { onLock: lockIn });
+initTimer(timerWrap, { onLock: () => { /* cashout stays active during action phase */ } });
 
 // ── Idle strikes — host counts turn-timer timeouts; bar syncs via onIdleStrikes ──
 const IDLE_MAX = 3;

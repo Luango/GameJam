@@ -31,9 +31,10 @@ export const DEFAULT_CONFIG = {
   voltageRates: {
     targetRTP: 0.96,
     rewardBonus: 1.15,
-    safe:     { base: 1.09091, follower: 0.96 },  // 0.96 / 0.88
-    charged:  { base: 1.28000, follower: 0.96 },  // 0.96 / 0.75
-    critical: { base: 1.47692, follower: 0.96 },  // 0.96 / 0.65
+    collisionSurge: { safe: 0.03, charged: 0.08, critical: 0.15 },
+    safe:     { base: 1.09091, follower: 0.955 },  // 0.96 / 0.88
+    charged:  { base: 1.28000, follower: 0.955 },  // 0.96 / 0.75
+    critical: { base: 1.47692, follower: 0.955 },  // 0.96 / 0.65
   },
   // Zone boundaries (latitude angle from equator, in radians)
   // Safe:     |lat| <= 0.4    (~23 degrees from equator)
