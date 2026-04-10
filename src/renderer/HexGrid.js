@@ -25,6 +25,13 @@ let _selectedTime = -Infinity; // performance.now() when last selection happened
 const _sparks = []; // { points, velocities, posAttr, startTime }
 const SPARK_LIFE_S = 0.80;
 
+// ── Shockwave rings (expanding ring on reveal) ──────────────────────────────
+const _shockwaves = []; // { points, dirs, posAttr, startTime }
+const SHOCKWAVE_LIFE_S = 0.50;
+
+// ── Charging tiles (anticipation phase before reveal) ────────────────────────
+const _chargingTiles = new Map(); // tileId → { startTime, origEmissive }
+
 // ── Selectable tile overlay discs ─────────────────────────────────────────────
 const _rings = new Map(); // tileId → THREE.Mesh disc
 let _hoveredId  = -1;
@@ -334,13 +341,117 @@ export function spawnSparks(tileId) {
   _sparks.push({ points, velocities, posAttr, startTime: performance.now() });
 }
 
+// ── Tile Charging (anticipation VFX) ─────────────────────────────────────────
+
+/**
+ * Begin the "drum roll" charging animation on a tile before reveal.
+ * Stroboscopic border pulse + emissive ramp toward white-hot.
+ */
+export function startTileCharge(tileId) {
+  const tile = _tiles.get(tileId);
+  if (!tile) return;
+  const origEmissive = tile.mesh.material.emissive.getHex();
+  _chargingTiles.set(tileId, { startTime: performance.now(), origEmissive });
+}
+
+/**
+ * Stop the charging animation and restore material for normal state transition.
+ */
+export function stopTileCharge(tileId) {
+  const tile = _tiles.get(tileId);
+  const data = _chargingTiles.get(tileId);
+  if (tile && data) {
+    tile.mesh.material.emissive.set(data.origEmissive);
+    tile.mesh.material.emissiveIntensity = 0.10;
+  }
+  _chargingTiles.delete(tileId);
+}
+
+// ── Shockwave Ring (expanding reveal impact) ─────────────────────────────────
+
+/**
+ * Spawn an expanding ring of particles from a tile center — the "reveal impact".
+ * @param {number} tileId
+ * @param {number} color  — hex color matching the reveal state
+ */
+export function spawnShockwave(tileId, color = 0x00ff55) {
+  const tile = _tiles.get(tileId);
+  if (!tile || !_scene) return;
+
+  const center = tile.center ?? tile.mesh.position;
+  const normal = center.clone().normalize();
+
+  const up    = Math.abs(normal.x) < 0.9 ? new THREE.Vector3(1, 0, 0) : new THREE.Vector3(0, 1, 0);
+  const tang1 = new THREE.Vector3().crossVectors(normal, up).normalize();
+  const tang2 = new THREE.Vector3().crossVectors(normal, tang1).normalize();
+
+  const COUNT = 40;
+  const posArr = new Float32Array(COUNT * 3);
+  const dirs = [];
+
+  for (let i = 0; i < COUNT; i++) {
+    posArr[i * 3]     = center.x;
+    posArr[i * 3 + 1] = center.y;
+    posArr[i * 3 + 2] = center.z;
+
+    const theta = (i / COUNT) * Math.PI * 2;
+    dirs.push(
+      new THREE.Vector3()
+        .addScaledVector(tang1, Math.cos(theta))
+        .addScaledVector(tang2, Math.sin(theta))
+        .addScaledVector(normal, 0.15) // slight outward lift
+        .normalize()
+        .multiplyScalar(0.015),
+    );
+  }
+
+  const geo = new THREE.BufferGeometry();
+  const posAttr = new THREE.BufferAttribute(posArr, 3);
+  posAttr.setUsage(THREE.DynamicDrawUsage);
+  geo.setAttribute('position', posAttr);
+
+  const mat = new THREE.PointsMaterial({
+    color,
+    size: 0.028,
+    transparent: true,
+    opacity: 0.9,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    sizeAttenuation: true,
+  });
+
+  const points = new THREE.Points(geo, mat);
+  _scene.add(points);
+  _shockwaves.push({ points, dirs, posAttr, startTime: performance.now() });
+}
+
 /**
  * Call each frame from the render loop to drive tile + disc animations.
  * @param {number} now  — performance.now() timestamp
  */
 export function updateTiles(now) {
-  _tiles.forEach((tile) => {
+  _tiles.forEach((tile, tileId) => {
     const { state, mesh, animData } = tile;
+
+    // ── Charging anticipation override ──
+    const chargeData = _chargingTiles.get(tileId);
+    if (chargeData) {
+      const ce = (now - chargeData.startTime) / 1000;
+      // Ramp emissive: dim → white-hot over 1.5s
+      const intensity = Math.min(0.2 + ce * 0.8, 1.4);
+      // Stroboscopic pulse: accelerating frequency (4Hz → ~12Hz)
+      const freq = 4 + ce * 5.3;
+      const pulse = Math.sin(ce * freq * Math.PI * 2);
+      mesh.material.emissiveIntensity = intensity * (0.6 + 0.4 * pulse);
+      // Shift emissive toward desaturated cyan/white ("unknown" state)
+      const lerp = Math.min(ce / 1.2, 0.85);
+      const origColor = new THREE.Color(chargeData.origEmissive);
+      const whiteish  = new THREE.Color(0xccddff);
+      mesh.material.emissive.copy(origColor).lerp(whiteish, lerp);
+      mesh.material.needsUpdate = true;
+      return; // skip normal state animation while charging
+    }
+
     if (!animData.startTime) return;
 
     const elapsed = (now - animData.startTime) / 1000; // seconds
@@ -387,9 +498,45 @@ export function updateTiles(now) {
     spark.posAttr.needsUpdate = true;
   }
 
+  // Update shockwave rings
+  for (let i = _shockwaves.length - 1; i >= 0; i--) {
+    const sw = _shockwaves[i];
+    const age = (now - sw.startTime) / 1000;
+    if (age >= SHOCKWAVE_LIFE_S) {
+      sw.points.geometry.dispose();
+      sw.points.material.dispose();
+      _scene.remove(sw.points);
+      _shockwaves.splice(i, 1);
+      continue;
+    }
+    sw.points.material.opacity = 0.9 * (1.0 - age / SHOCKWAVE_LIFE_S);
+    sw.points.material.size = 0.028 + age * 0.04; // grow as they expand
+    const arr = sw.posAttr.array;
+    for (let j = 0; j < sw.dirs.length; j++) {
+      arr[j * 3]     += sw.dirs[j].x;
+      arr[j * 3 + 1] += sw.dirs[j].y;
+      arr[j * 3 + 2] += sw.dirs[j].z;
+    }
+    sw.posAttr.needsUpdate = true;
+  }
+
   // Animate neon border rim strips
   const t = now / 1000;
   _borders.forEach((border, id) => {
+    // ── Charging strobe override ──
+    const chargeData = _chargingTiles.get(id);
+    if (chargeData) {
+      const ce = (now - chargeData.startTime) / 1000;
+      const freq = 4 + ce * 6;
+      // Hard strobe: alternating white ↔ zone neon
+      const flash = Math.sin(ce * freq * Math.PI * 2) > 0;
+      border.material.opacity = flash ? 1.0 : 0.3;
+      const tile = _tiles.get(id);
+      const zoneColor = tile ? (ZONE_NEON[tile.zone] ?? 0x00e5ff) : 0x00e5ff;
+      border.material.color.set(flash ? 0xffffff : zoneColor);
+      return;
+    }
+
     if (id === _selectedId) {
       // Selection VFX: instant full flash, then settle to strong steady glow
       const elapsed = (now - _selectedTime) / 1000;

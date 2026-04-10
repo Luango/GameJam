@@ -16,6 +16,9 @@ let _focusTarget    = null;  // THREE.Vector3 desired camera position
 let _focusAnimating = false;
 const FOCUS_LERP = 0.055;
 
+// Camera shake (bust impact tremor)
+let _shakeData = null; // { start, duration, intensity }
+
 const IDLE_TIMEOUT_MS = 3000;
 const AUTO_ROTATE_SPEED = 0.3;
 
@@ -120,7 +123,39 @@ export function render() {
   } else {
     _controls.update();
   }
+
+  // Camera shake — apply offset before render, restore after
+  let shakeOffset = null;
+  if (_shakeData) {
+    const elapsed = (performance.now() - _shakeData.start) / 1000;
+    const duration = _shakeData.duration / 1000;
+    if (elapsed >= duration) {
+      _shakeData = null;
+    } else {
+      const decay = 1 - elapsed / duration; // linear decay
+      const amp = _shakeData.intensity * decay;
+      shakeOffset = new THREE.Vector3(
+        (Math.random() - 0.5) * amp,
+        (Math.random() - 0.5) * amp,
+        (Math.random() - 0.5) * amp,
+      );
+      _camera.position.add(shakeOffset);
+    }
+  }
+
   _renderer.render(_scene, _camera);
+
+  // Restore camera position after shake
+  if (shakeOffset) _camera.position.sub(shakeOffset);
+}
+
+/**
+ * Trigger a brief camera shake — impact tremor for bust events.
+ * @param {number} intensity  — world-space offset amplitude (e.g. 0.008)
+ * @param {number} durationMs — shake duration in milliseconds (e.g. 300)
+ */
+export function shakeCamera(intensity = 0.008, durationMs = 300) {
+  _shakeData = { start: performance.now(), duration: durationMs, intensity };
 }
 
 /**
