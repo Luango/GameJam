@@ -5,7 +5,7 @@ window.THREE = THREE;
 
 import { init, render, getScene, getCamera } from './renderer/SphereRenderer.js';
 import { buildGrid, updateTiles, setHoverCallback } from './renderer/HexGrid.js';
-import { initPathTracer }                     from './renderer/PathTracer.js';
+import { initPathTracer, updateTrails }        from './renderer/PathTracer.js';
 import { initTokens, updateTokens, getTokenPositions } from './renderer/PlayerToken.js';
 import { preloadAll as preloadModels } from './renderer/ModelLoader.js';
 import {
@@ -627,6 +627,7 @@ function loop(now) {
   updateCosmos();
   updateTiles(now);
   updateTokens(now);
+  updateTrails(now);
   updateMap();
   _updatePosLabel();
   render();
