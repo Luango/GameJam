@@ -727,6 +727,7 @@ export async function handleP1TurnReveal(results, newlyRevealedTiles) {
     const colors = slots.map((s) => PLAYER_COLORS[s] ?? 0xffffff);
     playClash(tileId, colors);
     _flashScreenClash();
+    playAnnouncement(SFX.COLLISION); // plays for every client — it's a shared moment
   });
 
   _fadeVignette(hasBust ? 1000 : 600);
