@@ -66,8 +66,8 @@ export function init(container) {
         box-shadow: 0 0 10px rgba(0,201,167,0.2);
       }
       #cs-bet-input::placeholder {
-        color: #475569;
-        font-weight: 500;
+        color: #64748b;
+        font-weight: 600;
       }
 
       .bet-quick {
@@ -124,9 +124,9 @@ export function init(container) {
 
       #cs-bet-info {
         font-family: 'Rajdhani', sans-serif;
-        font-size: 13px;
-        font-weight: 500;
-        color: #475569;
+        font-size: 14px;
+        font-weight: 600;
+        color: #94a3b8;
         text-align: center;
         letter-spacing: 0.04em;
         min-height: 16px;

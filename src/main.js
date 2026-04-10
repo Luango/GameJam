@@ -11,6 +11,7 @@ import {
   init as initBridge, handleTilePick, handleHover, getLocalPlayerId,
 } from './state/RenderBridge.js';
 import { initHarness } from './dev/MockEventHarness.js';
+import { on } from './state/RenderBridge.js';
 
 import { init as initVoltage }             from './hud/VoltageDisplay.js';
 import { init as initTimer }               from './hud/TurnTimer.js';
@@ -35,7 +36,6 @@ const app    = document.getElementById('app');
 // ── Renderer ──────────────────────────────────────────────────────────────────
 const { scene, camera } = init(canvas);
 
-// ── 3D scene — Fibonacci grid shown in lobby; replaced by buildFromBoard on game start ──
 buildGrid(scene);
 initPathTracer(scene);
 initTokens(scene);
@@ -44,29 +44,21 @@ initTokens(scene);
 const eventBus = new EventTarget();
 initBridge(eventBus);
 
-// ── Game Orchestrator (P1 network + game logic) ───────────────────────────────
-let _lobbyControls = null; // { hide, updatePlayers }
+// ── Game Orchestrator ─────────────────────────────────────────────────────────
+let _lobbyControls = null;
 
 initOrchestrator(eventBus, {
-  onGameStart: () => {
-    _lobbyControls?.hide();
-  },
-  onPlayersUpdate: (players) => {
-    _lobbyControls?.updatePlayers(players);
-  },
-  onLobbyUpdate: (players, isHost, roomCode) => {
-    _lobbyControls?.updatePlayers(players);
-  },
+  onGameStart:     () => _lobbyControls?.hide(),
+  onPlayersUpdate: (players) => _lobbyControls?.updatePlayers(players),
+  onLobbyUpdate:   (players) => _lobbyControls?.updatePlayers(players),
 });
 
-// ── Lobby overlay ─────────────────────────────────────────────────────────────
 _lobbyControls = initLobby(app, {
   onCreate: (name) => createRoom(name),
   onJoin:   (code, name) => joinRoom(code, name),
   onReady:  () => setReady(),
 });
 
-// ── Dev mock harness (only in dev, alongside real network) ────────────────────
 if (import.meta.env.DEV) initHarness(eventBus);
 
 // ── Canvas interaction ────────────────────────────────────────────────────────
@@ -94,13 +86,13 @@ function _toNdc(e) {
   };
 }
 
-// ── HUD layout ────────────────────────────────────────────────────────────────
+// ── HUD layout — left + center columns only (right column removed) ─────────────
 Object.assign(hud.style, {
   position:            'absolute',
   inset:               '0',
   pointerEvents:       'none',
   display:             'grid',
-  gridTemplateColumns: '180px 1fr 180px',
+  gridTemplateColumns: '180px 1fr',
   gridTemplateRows:    '1fr',
   padding:             '14px',
   gap:                 '0',
@@ -122,23 +114,21 @@ function _makeColumn(justifyContent = 'flex-start') {
 
 const hudLeft   = _makeColumn('flex-start');
 const hudCenter = _makeColumn('flex-start');
-const hudRight  = _makeColumn('flex-start');
 
 hud.appendChild(hudLeft);
 hud.appendChild(hudCenter);
-hud.appendChild(hudRight);
 
-// ── HUD modules ───────────────────────────────────────────────────────────────
+// ── Left column ───────────────────────────────────────────────────────────────
 initLeaderboard(hudLeft);
 initVoltage(hudLeft);
 
-// Timer — top of center column
+// ── Center column: timer + tile hover info ────────────────────────────────────
 const timerWrap = document.createElement('div');
 Object.assign(timerWrap.style, { display: 'flex', justifyContent: 'center', pointerEvents: 'none' });
 hudCenter.appendChild(timerWrap);
 initTimer(timerWrap, { onLock: lockIn });
 
-// Tile hover info panel — middle of center column, shows on tile hover
+// Tile hover info — fades in when hovering a selectable tile
 const ZONE_INFO = {
   safe:     { label: 'SAFE ZONE',     range: '1.0× – 1.5×', risk: 'Low Risk',    color: '#00c9a7', icon: '◎' },
   charged:  { label: 'CHARGED ZONE',  range: '1.5× – 2.5×', risk: 'Medium Risk', color: '#f59e0b', icon: '⚡' },
@@ -161,31 +151,29 @@ hudCenter.appendChild(tileInfoEl);
 
 const tileInfoInner = document.createElement('div');
 Object.assign(tileInfoInner.style, {
-  background:     'rgba(6, 14, 28, 0.85)',
+  background:     'rgba(6, 14, 28, 0.88)',
   backdropFilter: 'blur(10px)',
   border:         '1px solid rgba(0,201,167,0.25)',
-  borderRadius:   '8px',
-  padding:        '14px 22px',
+  borderRadius:   '10px',
+  padding:        '16px 24px',
   display:        'flex',
   flexDirection:  'column',
   alignItems:     'center',
   gap:            '6px',
-  minWidth:       '240px',
+  minWidth:       '230px',
   textAlign:      'center',
   transition:     'border-color 0.25s',
 });
 tileInfoEl.appendChild(tileInfoInner);
 
 tileInfoInner.innerHTML = `
-  <div id="cs-ti-zone" style="font-family:'Rajdhani',sans-serif;font-size:20px;font-weight:700;
-       letter-spacing:0.12em;color:#00c9a7;text-shadow:0 0 10px #00c9a7;line-height:1.1"></div>
-  <div id="cs-ti-range" style="font-family:'Rajdhani',sans-serif;font-size:17px;font-weight:600;
-       color:#e2e8f0;letter-spacing:0.06em"></div>
-  <div id="cs-ti-risk" style="font-family:'Rajdhani',sans-serif;font-size:14px;font-weight:600;
-       color:#64748b;letter-spacing:0.1em;text-transform:uppercase"></div>
-  <div style="font-family:'Rajdhani',sans-serif;font-size:13px;font-weight:500;color:#475569;
-       letter-spacing:0.06em;margin-top:2px;border-top:1px solid rgba(255,255,255,0.05);
-       padding-top:6px;width:100%">Higher risk = bigger multiplier</div>
+  <div id="cs-ti-zone"  style="font-family:'Rajdhani',sans-serif;font-size:22px;font-weight:700;letter-spacing:0.1em;line-height:1.1"></div>
+  <div id="cs-ti-range" style="font-family:'Rajdhani',sans-serif;font-size:20px;font-weight:700;color:#e2e8f0"></div>
+  <div id="cs-ti-risk"  style="font-family:'Rajdhani',sans-serif;font-size:16px;font-weight:600;text-transform:uppercase"></div>
+  <div style="font-family:'Rajdhani',sans-serif;font-size:14px;font-weight:600;color:#94a3b8;
+       border-top:1px solid rgba(255,255,255,0.08);padding-top:8px;margin-top:2px;width:100%">
+    Higher risk = bigger multiplier
+  </div>
 `;
 
 const tiZoneEl  = tileInfoInner.querySelector('#cs-ti-zone');
@@ -193,80 +181,130 @@ const tiRangeEl = tileInfoInner.querySelector('#cs-ti-range');
 const tiRiskEl  = tileInfoInner.querySelector('#cs-ti-risk');
 
 setHoverCallback(({ zone }) => {
-  if (!zone) {
-    tileInfoEl.style.opacity = '0';
-    return;
-  }
+  if (!zone) { tileInfoEl.style.opacity = '0'; return; }
   const info = ZONE_INFO[zone];
-  tiZoneEl.textContent = `${info.icon}  ${info.label}`;
-  tiZoneEl.style.color = info.color;
+  tiZoneEl.textContent  = `${info.icon}  ${info.label}`;
+  tiZoneEl.style.color  = info.color;
   tiZoneEl.style.textShadow = `0 0 10px ${info.color}`;
   tileInfoInner.style.borderColor = `${info.color}55`;
   tiRangeEl.textContent = info.range;
   tiRangeEl.style.color = info.color;
-  tiRiskEl.textContent = info.risk;
-  tiRiskEl.style.color = info.color;
+  tiRiskEl.textContent  = info.risk;
+  tiRiskEl.style.color  = info.color;
   tileInfoEl.style.opacity = '1';
 });
 
-// Overview map — right column top
-initOverview(hudRight);
-
-// ── Unified Bet + Cashout panel — fixed, bottom-center, ≥55% wide ─────────────
-// Injected directly on app so it sits outside the HUD grid and spans freely.
-const bottomPanel = document.createElement('div');
-bottomPanel.id = 'cs-bottom-panel';
-Object.assign(bottomPanel.style, {
+// ── Zone pill — fixed, center-bottom, shows current player zone ───────────────
+// Sits just below the sphere so the player always knows what zone they're in.
+const zonePill = document.createElement('div');
+zonePill.id = 'cs-zone-pill';
+Object.assign(zonePill.style, {
   position:       'fixed',
-  bottom:         '20px',
+  bottom:         '22px',
   left:           '50%',
   transform:      'translateX(-50%)',
-  width:          '50vw',
-  maxWidth:       '700px',
-  minWidth:       '480px',
   display:        'flex',
-  flexDirection:  'row',
-  alignItems:     'stretch',
+  alignItems:     'center',
+  gap:            '10px',
+  background:     'rgba(6, 14, 28, 0.88)',
+  backdropFilter: 'blur(10px)',
+  border:         '1px solid rgba(0,201,167,0.35)',
+  borderRadius:   '50px',
+  padding:        '10px 24px',
+  zIndex:         '150',
+  pointerEvents:  'none',
+  opacity:        '0',
+  transition:     'opacity 0.3s, border-color 0.3s',
+});
+
+zonePill.innerHTML = `
+  <div id="cs-zp-dot" style="width:10px;height:10px;border-radius:50%;background:#00c9a7;
+       box-shadow:0 0 8px #00c9a7;flex-shrink:0"></div>
+  <div id="cs-zp-label" style="font-family:'Rajdhani',sans-serif;font-size:20px;font-weight:700;
+       letter-spacing:0.12em;color:#00c9a7;text-shadow:0 0 10px #00c9a7"></div>
+  <div id="cs-zp-mult" style="font-family:'Rajdhani',sans-serif;font-size:18px;font-weight:600;
+       color:#e2e8f0;letter-spacing:0.06em"></div>
+`;
+app.appendChild(zonePill);
+
+const zpDot   = zonePill.querySelector('#cs-zp-dot');
+const zpLabel = zonePill.querySelector('#cs-zp-label');
+const zpMult  = zonePill.querySelector('#cs-zp-mult');
+
+const ZONE_PILL_COLORS = { safe: '#00c9a7', charged: '#f59e0b', critical: '#ef4444' };
+const ZONE_PILL_LABELS = { safe: 'SAFE ZONE', charged: 'CHARGED ZONE', critical: 'CRITICAL ZONE' };
+
+on('onRoundStart', () => {
+  _updateZonePill('safe', 1.0);
+  zonePill.style.opacity = '1';
+});
+on('onReveal', ({ playerId, voltage, type }) => {
+  if (playerId === getLocalPlayerId()) {
+    const zone = type === 'safe' ? 'safe' : type === 'trap' ? 'critical' : 'charged';
+    _updateZonePill(zone, voltage);
+  }
+});
+on('onBust',    ({ playerId }) => { if (playerId === getLocalPlayerId()) zonePill.style.opacity = '0'; });
+on('onCashout', ({ playerId }) => { if (playerId === getLocalPlayerId()) zonePill.style.opacity = '0'; });
+on('onRoundEnd', () => { zonePill.style.opacity = '0'; });
+
+function _updateZonePill(zone, voltage) {
+  const color = ZONE_PILL_COLORS[zone] ?? '#00c9a7';
+  zpDot.style.background  = color;
+  zpDot.style.boxShadow   = `0 0 8px ${color}`;
+  zpLabel.textContent     = ZONE_PILL_LABELS[zone] ?? 'SAFE ZONE';
+  zpLabel.style.color     = color;
+  zpLabel.style.textShadow = `0 0 10px ${color}`;
+  zpMult.textContent      = `×${voltage.toFixed(1)}`;
+  zonePill.style.borderColor = `${color}55`;
+}
+
+// ── Right-side panel: Bet (top) + Cashout (bottom) ────────────────────────────
+const sidePanel = document.createElement('div');
+sidePanel.id = 'cs-side-panel';
+Object.assign(sidePanel.style, {
+  position:       'fixed',
+  right:          '20px',
+  top:            '50%',
+  transform:      'translateY(-50%)',
+  width:          '280px',
+  display:        'flex',
+  flexDirection:  'column',
+  gap:            '0',
   background:     'rgba(6, 14, 28, 0.92)',
   backdropFilter: 'blur(14px)',
   border:         '1px solid rgba(0, 201, 167, 0.30)',
   borderRadius:   '12px',
-  boxShadow:      '0 0 40px rgba(0,0,0,0.5), 0 0 20px rgba(0,201,167,0.08)',
+  boxShadow:      '0 0 40px rgba(0,0,0,0.5), 0 0 20px rgba(0,201,167,0.06)',
   zIndex:         '200',
   pointerEvents:  'auto',
   overflow:       'hidden',
 });
 
-// Strip individual panel styling from inner panels so they blend into the unified shell
-const innerOverride = document.createElement('style');
-innerOverride.textContent = `
-  #cs-bottom-panel #cs-bet,
-  #cs-bottom-panel #cs-cashout {
+// Strip individual panel backgrounds so they merge into the side panel shell
+const sideOverride = document.createElement('style');
+sideOverride.textContent = `
+  #cs-side-panel #cs-bet,
+  #cs-side-panel #cs-cashout {
     background: none !important;
     border: none !important;
     border-radius: 0 !important;
     box-shadow: none !important;
     backdrop-filter: none !important;
-    flex: 1;
   }
-  /* Vertical divider between the two halves */
-  #cs-bottom-panel #cs-bet {
-    border-right: 1px solid rgba(255,255,255,0.08) !important;
+  #cs-side-panel #cs-bet {
+    border-bottom: 1px solid rgba(255,255,255,0.08) !important;
   }
 `;
-document.head.appendChild(innerOverride);
+document.head.appendChild(sideOverride);
 
-initBetInput(bottomPanel);
-initCashout(bottomPanel, { getBet });
-app.appendChild(bottomPanel);
+initBetInput(sidePanel);
+initCashout(sidePanel, { getBet });
+app.appendChild(sidePanel);
 
-// Results overlay — mounts over everything, shown on onRoundEnd
+// Results + banners
 initResults(app);
-
-// Game-start banner — drops from top with instructions on onRoundStart
 initGameStartBanner(app);
-
-// Bust overlay — full-screen red flash when local player busts
 initBustOverlay(app);
 
 // ── Current-position label (world-to-screen) ──────────────────────────────────
@@ -277,15 +315,15 @@ Object.assign(_posLabel.style, {
   position:      'absolute',
   pointerEvents: 'none',
   fontFamily:    "'Rajdhani', sans-serif",
-  fontSize:      '11px',
+  fontSize:      '13px',
   fontWeight:    '600',
   letterSpacing: '0.1em',
   color:         '#38bdf8',
   textShadow:    '0 0 8px #38bdf8',
-  background:    'rgba(6,14,28,0.7)',
+  background:    'rgba(6,14,28,0.75)',
   border:        '1px solid rgba(56,189,248,0.3)',
-  borderRadius:  '3px',
-  padding:       '2px 8px',
+  borderRadius:  '4px',
+  padding:       '3px 8px',
   whiteSpace:    'nowrap',
   display:       'none',
   transform:     'translate(-50%, -220%)',
@@ -299,12 +337,9 @@ function _updatePosLabel() {
   const localId   = getLocalPlayerId();
   const localPos  = positions.get(localId);
   if (!localPos) { _posLabel.style.display = 'none'; return; }
-
   _vec3.copy(localPos);
   _vec3.project(camera);
-
   if (_vec3.z > 1) { _posLabel.style.display = 'none'; return; }
-
   const rect = canvas.getBoundingClientRect();
   _posLabel.style.display = 'block';
   _posLabel.style.left    = `${((_vec3.x + 1) / 2) * rect.width + rect.left}px`;
