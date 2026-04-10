@@ -1,4 +1,4 @@
-import { EVENTS } from '../constants/gameState.js';
+import { EVENTS, ACTIONS } from '../constants/gameState.js';
 
 // MockEventHarness — dev-only floating panel to fire P1 events without P1 running.
 // Stripped from production builds via import.meta.env.DEV guard in main.js.
@@ -10,6 +10,9 @@ const PLAYER_COUNT = 4;
 let _bus = null;
 let _roundActive = false;
 let _playerCount = 2;
+let _lastSeed = 42;
+let _localBusted = false;
+let _autoProgressTimer = null;
 
 export function initHarness(eventBus) {
   _bus = eventBus;
@@ -24,6 +27,47 @@ export function initHarness(eventBus) {
       panel.dataset.hidden = hidden ? 'false' : 'true';
       panel.style.display  = hidden ? 'block' : 'none';
     }
+  });
+
+  // ── Auto-progression: timer expired → end round → start next round ──────────
+  _bus.addEventListener(ACTIONS.LOCK_IN, () => {
+    if (!_roundActive) return;
+    clearTimeout(_autoProgressTimer);
+
+    // Short pause then fire onRoundEnd (player stayed — status 'active', not bust/cashout)
+    _autoProgressTimer = setTimeout(() => {
+      _roundActive = false;
+      const results = Array.from({ length: _playerCount }, (_, i) => ({
+        playerId: i,
+        voltage:  1.0,
+        status:   'active',   // idle streak adjudicated by main.js inactivity logic
+      }));
+      _fire(EVENTS.onRoundEnd, { results });
+
+      // Wait for inactivity logic in main.js to run (may dispatch onBust),
+      // then start next round unless local player busted.
+      _autoProgressTimer = setTimeout(() => {
+        if (_localBusted) return;
+        _roundActive = true;
+        _lastSeed = (_lastSeed + 1) % 9999;
+        _fire(EVENTS.onRoundStart, {
+          boardSeed:     _lastSeed,
+          playerCount:   _playerCount,
+          timerDuration: 30,
+          localPlayerId: 0,
+        });
+      }, 1500);
+    }, 500);
+  });
+
+  // Track local bust so auto-progression stops after idle exhaustion
+  _bus.addEventListener(EVENTS.onBust, (e) => {
+    if (e.detail?.playerId === 0) _localBusted = true;
+  });
+
+  // Reset bust flag when a new round is manually started
+  _bus.addEventListener(EVENTS.onRoundStart, () => {
+    // Only reset if harness itself fired it (manual button click resets bust state)
   });
 }
 
@@ -184,11 +228,13 @@ function _mountPanel() {
   const $  = (id) => panel.querySelector('#' + id);
 
   $('mh-round-start').addEventListener('click', () => {
-    _playerCount = parseInt($('mh-players').value);
-    const seed   = parseInt($('mh-seed').value) || 42;
-    _roundActive = true;
+    _playerCount  = parseInt($('mh-players').value);
+    _lastSeed     = parseInt($('mh-seed').value) || 42;
+    _roundActive  = true;
+    _localBusted  = false;   // manual restart resets bust state
+    clearTimeout(_autoProgressTimer);
     _fire(EVENTS.onRoundStart, {
-      boardSeed:     seed,
+      boardSeed:     _lastSeed,
       playerCount:   _playerCount,
       timerDuration: 30,
       localPlayerId: 0,

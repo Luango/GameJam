@@ -7,11 +7,16 @@
       "Bash(git checkout:*)",
       "Bash(npm install:*)",
       "Bash(npm run:*)",
-      "Bash(git -C \"C:/Users/Qinmei Liu/Desktop/Game jam/GameJam\" remote get-url origin)",
+      "mcp__Claude_Preview__preview_start",
+      "Bash(git pull:*)",
+      "Bash(git stash:*)",
+      "Bash(git add:*)",
+      "Bash(git commit -m ':*)",
+      "Bash(git push:*)",
+      "Bash(git log:*)",
       "Bash(git clone:*)",
       "Bash(git branch:*)",
-      "Bash(git merge:*)",
-      "Bash(git add:*)"
+      "Bash(git merge:*)"
     ]
   }
 }

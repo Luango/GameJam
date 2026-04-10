@@ -12,25 +12,51 @@ const RANK_LABELS = ['1ST', '2ND', '3RD', '4TH'];
 const STATUS_LABEL = { bust: 'BUST', cashout: 'CASHED OUT', active: 'ACTIVE' };
 const STATUS_COLOR = { bust: '#ef4444', cashout: '#38bdf8', active: '#00c9a7' };
 
-export function init(container) {
+/**
+ * @param {HTMLElement} container
+ * @param {{ getIsHost?: () => boolean, onHostStartNewGame?: () => void, onLeaveRoom?: () => void }} options
+ */
+export function init(container, options = {}) {
+  const getIsHost = typeof options.getIsHost === 'function' ? options.getIsHost : () => false;
+  const onHostStartNewGame = options.onHostStartNewGame ?? (() => {});
+  const onLeaveRoom = options.onLeaveRoom ?? (() => {});
+
   const overlay = _build();
   container.appendChild(overlay);
 
-  const inner   = overlay.querySelector('#ro-inner');
-  const listEl  = overlay.querySelector('#ro-list');
-  const closeBtn = overlay.querySelector('#ro-close');
+  const inner      = overlay.querySelector('#ro-inner');
+  const listEl     = overlay.querySelector('#ro-list');
+  const subtitleEl = overlay.querySelector('#ro-subtitle');
+  const waitEl     = overlay.querySelector('#ro-wait-host');
+  const newGameBtn = overlay.querySelector('#ro-new-game');
+  const leaveBtn   = overlay.querySelector('#ro-leave-room');
 
-  // Hide on dismiss
-  closeBtn.addEventListener('click', () => _hide(overlay));
+  newGameBtn.addEventListener('click', () => {
+    onHostStartNewGame();
+    _hide(overlay);
+  });
+  leaveBtn.addEventListener('click', () => {
+    onLeaveRoom();
+    _hide(overlay);
+  });
 
-  // Show on round end
-  on('onRoundEnd', ({ results }) => {
+  on('onRoundEnd', ({ results, matchNumber }) => {
     _populate(listEl, results ?? []);
+    if (subtitleEl) {
+      subtitleEl.textContent = matchNumber != null ? `Match ${matchNumber} complete` : 'Match complete';
+    }
+    const host = getIsHost();
+    newGameBtn.style.display = host ? 'block' : 'none';
+    waitEl.style.display = host ? 'none' : 'block';
     _show(overlay, inner);
   });
 
-  // Auto-hide when a new round starts
   on('onRoundStart', () => _hide(overlay));
+
+  return {
+    hide: () => _hide(overlay),
+    show: () => _show(overlay, inner),
+  };
 }
 
 // ─── Show / hide ─────────────────────────────────────────────────────────────
@@ -152,10 +178,10 @@ function _build() {
   inner.innerHTML = `
     <!-- Header -->
     <div style="text-align:center">
-      <div style="font-family:${FONT_MONO};font-size:10px;letter-spacing:.22em;
-                  color:#475569;text-transform:uppercase;margin-bottom:6px">Round Complete</div>
+      <div id="ro-subtitle" style="font-family:${FONT_MONO};font-size:10px;letter-spacing:.22em;
+                  color:#475569;text-transform:uppercase;margin-bottom:6px">Match complete</div>
       <div style="font-family:${FONT_UI};font-size:28px;font-weight:700;
-                  letter-spacing:.1em;color:#e2e8f0">FINAL STANDINGS</div>
+                  letter-spacing:.1em;color:#e2e8f0">GAME OVER</div>
     </div>
 
     <!-- Column headers -->
@@ -174,14 +200,27 @@ function _build() {
     <div id="ro-list" style="display:flex;flex-direction:column;gap:8px"></div>
 
     <!-- Actions -->
-    <div style="display:flex;justify-content:center;padding-top:4px">
-      <button id="ro-close"
-        style="background:rgba(56,189,248,0.12);border:1px solid rgba(56,189,248,0.3);
-               border-radius:6px;padding:10px 32px;color:#38bdf8;
-               font-family:${FONT_UI};font-size:13px;font-weight:600;letter-spacing:.12em;
-               cursor:pointer;transition:all 0.2s">
-        CONTINUE
-      </button>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:10px;padding-top:4px">
+      <div id="ro-wait-host" style="display:none;font-family:${FONT_UI};font-size:12px;
+           color:#64748b;text-align:center;max-width:280px">
+        Waiting for host to start the next match…
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;width:100%">
+        <button id="ro-new-game" type="button"
+          style="display:none;background:rgba(0,201,167,0.15);border:1px solid rgba(0,201,167,0.45);
+                 border-radius:8px;padding:10px 24px;color:#00c9a7;
+                 font-family:${FONT_UI};font-size:13px;font-weight:700;letter-spacing:.12em;
+                 cursor:pointer;transition:all 0.2s">
+          START NEW GAME
+        </button>
+        <button id="ro-leave-room" type="button"
+          style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.35);
+                 border-radius:8px;padding:10px 24px;color:#f87171;
+                 font-family:${FONT_UI};font-size:13px;font-weight:700;letter-spacing:.12em;
+                 cursor:pointer;transition:all 0.2s">
+          LEAVE ROOM
+        </button>
+      </div>
     </div>
   `;
 

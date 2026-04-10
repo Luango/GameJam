@@ -12,8 +12,13 @@ import { focusOnPosition, stopAutoRotate, resumeAutoRotate } from '../renderer/S
 
 // RenderBridge — the ONLY file in P2 that reads P1 events or emits P1 actions.
 
+/** Move phase length (seconds); keep in sync with GameOrchestrator MOVE_TIMER_MS. */
+const MOVE_TIMER_SEC = 30;
+
 let _bus           = null;
 let _localPlayerId = 0;
+/** HUD / token slot (0–3); distinct from PeerJS id in P1 mode. */
+let _localHudSlot  = 0;
 let _playerCount   = 2;
 let _roundActive   = false;
 let _localBusted   = false;
@@ -22,6 +27,8 @@ let _lastHoveredSelectableTile = -1;
 const _callbacks = {
   onReveal: [], onBust: [], onCashout: [],
   onRoundEnd: [], onRoundStart: [], onTimerSync: [],
+  onIdleStrikes: [],
+  onLocalMoveTurn: [], onPlayTurn: [],
 };
 
 // Last known tile per player (keyed by playerId string in P1 mode, number in dev mode)
@@ -61,6 +68,9 @@ export function emit(action, payload = {}) {
 
 export function getLocalPlayerId() { return _localPlayerId; }
 
+/** Use for HUD callbacks where playerId is a numeric slot (onReveal, onBust, …). */
+export function getLocalHudSlot() { return _localHudSlot; }
+
 // ─── Tile picking & hover (wired in main.js) ─────────────────────────────────
 
 /**
@@ -96,14 +106,15 @@ export function handleHover(ndcPoint, camera) {
 
 function _handleRoundStart({ boardSeed, playerCount = 2, timerDuration = 30, localPlayerId = 0 }) {
   _localPlayerId = localPlayerId;
+  _localHudSlot  = localPlayerId;
   _playerCount   = playerCount;
   _roundActive   = true;
   _localBusted   = false;
-  _lastTile.clear();
 
   resetGrid();
   clearAllPaths();
   clearAllTokens();
+  _lastTile.clear(); // clear AFTER renderer reset, BEFORE spawning so _refreshSelectables works
 
   // Spawn all players on SAFE zone tiles (rule: game starts on safe zone)
   const safeTiles = getTileIdsByZone('safe');
@@ -125,6 +136,10 @@ function _handleRoundStart({ boardSeed, playerCount = 2, timerDuration = 30, loc
   _refreshSelectables(localPlayerId);
 
   _notify('onRoundStart', { boardSeed, playerCount, timerDuration, localPlayerId });
+
+  const canStep = !_localBusted;
+  _notify('onPlayTurn', { canStep, spectating: _localBusted });
+  if (canStep) _notify('onLocalMoveTurn', {});
 }
 
 function _handleReveal({ tileId, type, playerId, voltage }) {
@@ -173,11 +188,11 @@ function _handleCashout({ playerId, voltage }) {
   _notify('onCashout', { playerId, voltage });
 }
 
-function _handleRoundEnd({ results }) {
+function _handleRoundEnd({ results, matchNumber }) {
   _roundActive = false;
   clearSelectables();
   resumeAutoRotate();
-  _notify('onRoundEnd', { results });
+  _notify('onRoundEnd', { results, matchNumber: matchNumber ?? 1 });
 }
 
 function _handleTimerSync({ remaining }) {
@@ -212,18 +227,19 @@ function _pickStartTile(safeTiles, seed, playerIndex, playerCount) {
  * Called by GameOrchestrator once the board is built and game starts.
  * @param {Array<{id:string, name:string, color:string, startTileId:number}>} playerOrder
  * @param {string} localId  — this client's PeerJS/player ID
+ * @param {Record<string, number>} [bets]  — peerId → wager (authoritative for HUD)
  */
-export function handleP1RoundStart(playerOrder, localId) {
+export function handleP1RoundStart(playerOrder, localId, bets = {}) {
   _localPlayerId = localId;
   _playerCount   = playerOrder.length;
   _roundActive   = true;
   _localBusted   = false;
-  _lastTile.clear();
   _playerSlots.clear();
 
   resetGrid();
   clearAllPaths();
   clearAllTokens();
+  _lastTile.clear(); // clear AFTER renderer reset, BEFORE spawning
 
   // Assign slots and spawn tokens
   playerOrder.forEach((p, slot) => {
@@ -234,14 +250,28 @@ export function handleP1RoundStart(playerOrder, localId) {
 
   // Focus on local player's starting position
   const localSlot = _playerSlots.get(localId) ?? 0;
+  _localHudSlot = localSlot;
   const localEntry = playerOrder.find((p) => p.id === localId);
   if (localEntry != null) {
     focusOnPosition(getTilePosition(localEntry.startTileId));
     stopAutoRotate();
   }
 
-  // Notify HUDs — use slot index as playerId for consistent HUD map keys
-  _notify('onRoundStart', { playerCount: playerOrder.length, localPlayerId: localSlot });
+  // Notify HUDs — use slot index as playerId; include name/color per slot
+  const players = playerOrder.map((p, slot) => ({
+    playerId: slot,
+    name:     p.name ?? `P${slot}`,
+    color:    p.color ?? null,
+  }));
+  const betAmount = bets[localId] ?? 0;
+  const timerSec = MOVE_TIMER_SEC;
+  _notify('onRoundStart', {
+    playerCount: playerOrder.length,
+    localPlayerId: localSlot,
+    players,
+    betAmount,
+    timerDuration: timerSec,
+  });
 }
 
 /**
@@ -258,7 +288,12 @@ export function handleP1TurnBegin(validMoves, timerDeadline) {
   }
 
   // Sync the turn timer — remaining time accounts for any latency
-  _notify('onTimerSync', { remaining: Math.max(0, timerDeadline - Date.now()) });
+  const remaining = Math.max(0, (timerDeadline - Date.now()) / 1000);
+  _notify('onTimerSync', { remaining });
+
+  const canStep = validMoves.length > 0 && !_localBusted;
+  _notify('onPlayTurn', { canStep, spectating: _localBusted });
+  if (canStep) _notify('onLocalMoveTurn', {});
 }
 
 /**
@@ -278,7 +313,7 @@ export function handleP1TurnReveal(results, newlyRevealedTiles) {
 
   // 2. Process per-player results — normalise playerId to slot index for HUD maps
   for (const result of results) {
-    const { playerId, action, tileId, tileState, totalVoltage, status } = result;
+    const { playerId, action, tileId, tileState, totalVoltage, status, idleStrikes } = result;
     // slot is the numeric index HUDs use; fall back to 0 in dev/mock mode where
     // _playerSlots is empty and playerId is already a number
     const slot = _playerSlots.size > 0
@@ -318,6 +353,10 @@ export function handleP1TurnReveal(results, newlyRevealedTiles) {
       _notify('onCashout', { playerId: slot, voltage: totalVoltage });
     }
 
+    if (action === 'timeout' && playerId === _localPlayerId && idleStrikes != null) {
+      _notify('onIdleStrikes', { count: idleStrikes });
+    }
+
     // Focus camera on local player's move
     if (playerId === _localPlayerId && tileId != null) {
       focusOnPosition(getTilePosition(tileId));
@@ -333,7 +372,22 @@ export function handleP1TurnReveal(results, newlyRevealedTiles) {
  * @param {object[]} results    — final per-player results
  * @param {object[]} leaderboard
  */
-export function handleP1RoundEnd(results, leaderboard) {
+/**
+ * Tear down board/tokens between matches (lobby / rematch).
+ */
+export function resetMatchVisualsForLobby() {
+  _roundActive = false;
+  _localBusted = false;
+  clearSelectables();
+  resumeAutoRotate();
+  resetGrid();
+  clearAllPaths();
+  clearAllTokens();
+  _lastTile.clear();
+  _playerSlots.clear();
+}
+
+export function handleP1RoundEnd(results, leaderboard, matchNumber = 1) {
   _roundActive = false;
   clearSelectables();
   resumeAutoRotate();
@@ -356,5 +410,5 @@ export function handleP1RoundEnd(results, leaderboard) {
     };
   });
 
-  _notify('onRoundEnd', { results: normResults, leaderboard });
+  _notify('onRoundEnd', { results: normResults, leaderboard, matchNumber });
 }

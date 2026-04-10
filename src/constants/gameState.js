@@ -10,6 +10,7 @@ export const EVENTS = {
   onRoundEnd:   'onRoundEnd',   // { results: Array<{ playerId, voltage, status: 'bust'|'cashout'|'active' }> }
   onRoundStart: 'onRoundStart', // { boardSeed: number, playerCount: number, timerDuration: number, localPlayerId: number }
   onTimerSync:  'onTimerSync',  // { remaining: number }  — sent every second by P1
+  onIdleStrikes: 'onIdleStrikes', // { count: number } — host idle strikes for local player (turn timer)
 };
 
 /** Actions P2 → P1 (the only three messages P2 ever sends) */
