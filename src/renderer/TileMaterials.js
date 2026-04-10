@@ -22,10 +22,13 @@ const STATE_EMISSIVE = {
 function _makeMaterial(color) {
   return new THREE.MeshStandardMaterial({
     color,
-    roughness: 0.6,
-    metalness: 0.2,
+    roughness: 0.10,
+    metalness: 0.35,
     emissive: new THREE.Color(0x000000),
     emissiveIntensity: 0,
+    transparent: true,
+    opacity: 0.60,
+    depthWrite: false,
   });
 }
 

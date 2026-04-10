@@ -15,6 +15,10 @@ const _tiles = new Map(); // tileId → { mesh, zone, state, animData, center?, 
 // P1 board reference — set by buildFromBoard, null in standalone/dev mode
 let _p1Board = null;
 
+// ── Neon border line loops (permanent, one per tile) ─────────────────────────
+const _borders = new Map(); // tileId → THREE.LineLoop
+const ZONE_NEON = { safe: 0x00c9a7, charged: 0xf59e0b, critical: 0xef4444 };
+
 // ── Selectable tile overlay discs ─────────────────────────────────────────────
 const _rings = new Map(); // tileId → THREE.Mesh disc
 let _hoveredId  = -1;
@@ -60,6 +64,31 @@ function _getZone(v) {
 }
 
 /**
+ * Build a neon LineLoop border for a tile.
+ * @param {THREE.Vector3[]} perimeterVerts  — shrunk perimeter vertices in world space
+ * @param {THREE.Vector3}   normal          — outward normal of the tile
+ * @param {'safe'|'charged'|'critical'} zone
+ */
+function _buildBorder(perimeterVerts, normal, zone) {
+  const pts = perimeterVerts.map((v) => v.clone().addScaledVector(normal, 0.003));
+  const positions = [];
+  pts.forEach((p) => positions.push(p.x, p.y, p.z));
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+
+  const mat = new THREE.LineBasicMaterial({
+    color: ZONE_NEON[zone] ?? 0x00c9a7,
+    transparent: true,
+    opacity: 0.55,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+
+  return new THREE.LineLoop(geo, mat);
+}
+
+/**
  * Build tile meshes from P1 board data (replaces buildGrid for networked games).
  * Tile IDs are identical to P1's board.tiles indices — required for network messages.
  * @param {object} board  — P1 board: { tiles, startTiles, zoneRings }
@@ -76,6 +105,12 @@ export function buildFromBoard(board, scene, sourceRadius = 6) {
     scene.remove(mesh);
   });
   _tiles.clear();
+  _borders.forEach((border) => {
+    border.geometry.dispose();
+    border.material.dispose();
+    scene.remove(border);
+  });
+  _borders.clear();
   clearSelectables();
 
   _p1Board = board;
@@ -119,6 +154,10 @@ export function buildFromBoard(board, scene, sourceRadius = 6) {
     const mesh = new THREE.Mesh(geo, mat);
     mesh.userData.tileId = tile.id;
     scene.add(mesh);
+
+    const border = _buildBorder(shrunk, normal, zone);
+    scene.add(border);
+    _borders.set(tile.id, border);
 
     _tiles.set(tile.id, { mesh, zone, state: 'hidden', animData: {}, center, tileRadius });
   }
@@ -218,8 +257,23 @@ export function updateTiles(now) {
     }
   });
 
-  // Animate selectable discs
+  // Animate neon border line loops
   const t = now / 1000;
+  _borders.forEach((border, id) => {
+    if (id === _selectedId) {
+      border.material.opacity = 1.0;
+    } else if (id === _hoveredId && _rings.has(id)) {
+      border.material.opacity = 0.80 + 0.15 * Math.sin(t * 6);
+    } else if (_rings.has(id)) {
+      border.material.opacity = 0.55 + 0.20 * Math.sin(t * 3.5 + id * 0.9);
+    } else {
+      // Ambient organic flicker — dual sine creates pseudo-random per-tile shimmer
+      const shimmer = Math.sin(t * 2.3 + id * 1.1) * Math.sin(t * 4.7 + id * 2.3);
+      border.material.opacity = 0.12 + 0.07 * shimmer;
+    }
+  });
+
+  // Animate selectable discs
   _rings.forEach((disc, id) => {
     const tile = _tiles.get(id);
     if (id === _selectedId) {
