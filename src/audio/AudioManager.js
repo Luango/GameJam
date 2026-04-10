@@ -71,4 +71,5 @@ export const SFX = {
   REWARD_REVEAL:'assets/sfx/Reward tile reveal.mp3',
   TIMEOUT:      'assets/sfx/Timeout.mp3',
   REVEAL_START: 'assets/sfx/reveal starts.mp3',
+  COLLISION:    'assets/sfx/Collision.mp3',     // announcement — plays for all clients
 };
