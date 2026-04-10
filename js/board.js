@@ -282,14 +282,19 @@ export function isForwardMove(board, currentTileId, targetTileId) {
 
 /**
  * Get valid moves for a player at a given tile.
- * Returns array of adjacent tile IDs that satisfy forward-only rule.
+ * Returns array of adjacent tile IDs that satisfy forward-only rule
+ * and excludes tiles the player has already visited.
+ * @param {object} board
+ * @param {number} currentTileId
+ * @param {number[]} [visitedTileIds] - tiles the player has already walked
  */
-export function getValidMoves(board, currentTileId) {
+export function getValidMoves(board, currentTileId, visitedTileIds = []) {
   const tile = board.tiles[currentTileId];
   if (!tile) return [];
 
+  const visited = new Set(visitedTileIds);
   return tile.adjacency.filter(adjId => {
-    // Allow same-zone or deeper zone moves
+    if (visited.has(adjId)) return false;
     return isForwardMove(board, currentTileId, adjId);
   });
 }

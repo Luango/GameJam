@@ -94,6 +94,7 @@ export function createTurnManager(opts) {
           id: p.id,
           name: p.name,
           currentTileId: p.currentTileId,
+          path: [...p.path],
           voltage: p.voltage,
           status: p.status,
         });
@@ -159,6 +160,10 @@ export function createTurnManager(opts) {
       // Validate tile exists
       if (!getTile(board, tileId)) {
         return { ok: false, reason: 'invalid_tile' };
+      }
+      // Disallow revisiting already-visited tiles
+      if (player.path.includes(tileId)) {
+        return { ok: false, reason: 'already_visited' };
       }
 
       pendingMoves[playerId] = { tileId, action: ACTION.STEP };

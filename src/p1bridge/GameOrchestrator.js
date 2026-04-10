@@ -542,7 +542,7 @@ function _onGameStart_msg(msg) {
 function _onTurnBegin(msg) {
   const myEntry = msg.activePlayers?.find((p) => p.id === _localId);
   const validMoves = (myEntry && _board)
-    ? getValidMoves(_board, myEntry.currentTileId)
+    ? getValidMoves(_board, myEntry.currentTileId, myEntry.path || [])
     : [];
 
   handleP1TurnBegin(validMoves, msg.timerDeadline);

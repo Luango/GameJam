@@ -552,7 +552,7 @@ function handleTurnBegin(msg) {
 
   const localPlayer = players[localPlayerId];
   if (localPlayer && isActive(localPlayer)) {
-    const validMoves = getValidMoves(board, localPlayer.currentTileId);
+    const validMoves = getValidMoves(board, localPlayer.currentTileId, localPlayer.path);
     SphereRenderer.highlightValidMoves(validMoves);
   } else {
     SphereRenderer.clearHighlights();
@@ -718,7 +718,7 @@ function onMouseClick(event) {
   const tileId = SphereRenderer.raycastTile(raycaster, sceneRefs.camera, sceneRefs.sphereGroup);
 
   if (tileId != null) {
-    const validMoves = getValidMoves(board, localPlayer.currentTileId);
+    const validMoves = getValidMoves(board, localPlayer.currentTileId, localPlayer.path);
     if (validMoves.includes(tileId)) {
       // Preview selection — don't send to host yet
       selectedTileId = tileId;
