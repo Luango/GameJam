@@ -2,7 +2,7 @@ import { injectStyles } from './HudStyles.js';
 import { on, emit, getLocalPlayerId } from '../state/RenderBridge.js';
 import { ACTIONS } from '../constants/gameState.js';
 
-// CashoutButton — center-bottom panel (paired with BetInput).
+// CashoutButton — right half of the unified bottom panel.
 // Shows: current zone name, win amount, cash-out button.
 // Active only when round is running and local player hasn't busted/cashed.
 
@@ -29,128 +29,115 @@ export function init(container, { getBet } = {}) {
   panel.innerHTML = `
     <style>
       #cs-cashout {
-        width: 100%;
-        padding: 14px 18px;
+        padding: 16px 20px;
         display: flex;
         flex-direction: column;
         gap: 10px;
-      }
-
-      #cs-cashout .co-balance-row {
-        display: flex;
-        justify-content: space-between;
-        align-items: baseline;
-      }
-
-      #cs-cashout .co-bal-label {
-        font-family: 'Share Tech Mono', monospace;
-        font-size: 11px;
-        letter-spacing: 0.14em;
-        text-transform: uppercase;
-        color: #475569;
-      }
-
-      #cs-cashout .co-bal-val {
-        font-family: 'Share Tech Mono', monospace;
-        font-size: 13px;
-        color: #e2e8f0;
+        min-width: 0;
       }
 
       #cs-win-panel {
-        background: rgba(251, 191, 36, 0.1);
-        border: 1px solid rgba(251, 191, 36, 0.3);
-        border-radius: 4px;
-        padding: 8px 12px;
+        background: rgba(251, 191, 36, 0.08);
+        border: 1px solid rgba(251, 191, 36, 0.25);
+        border-radius: 6px;
+        padding: 8px 14px;
         text-align: center;
       }
 
       #cs-win-amount {
-        font-family: 'Share Tech Mono', monospace;
-        font-size: 22px;
+        font-family: 'Rajdhani', sans-serif;
+        font-size: 24px;
+        font-weight: 700;
         color: #fbbf24;
-        text-shadow: 0 0 10px #fbbf2488;
+        text-shadow: 0 0 12px #fbbf2466;
         letter-spacing: 0.04em;
+        line-height: 1.1;
       }
 
       #cs-win-sub {
-        font-family: 'Share Tech Mono', monospace;
-        font-size: 11px;
+        font-family: 'Rajdhani', sans-serif;
+        font-size: 13px;
+        font-weight: 500;
         color: #78716c;
-        margin-top: 2px;
+        margin-top: 1px;
+        letter-spacing: 0.06em;
       }
 
       #cs-zone-name {
         font-family: 'Rajdhani', sans-serif;
-        font-size: 26px;
+        font-size: 28px;
         font-weight: 700;
-        letter-spacing: 0.12em;
+        letter-spacing: 0.1em;
         text-align: center;
         color: #00c9a7;
-        text-shadow: 0 0 12px #00c9a7;
-        transition: color 0.4s, text-shadow 0.4s;
+        text-shadow: 0 0 14px #00c9a7;
+        transition: color 0.35s, text-shadow 0.35s;
         line-height: 1;
       }
 
       #cs-cashout-sub {
-        font-family: 'Share Tech Mono', monospace;
-        font-size: 11px;
+        font-family: 'Rajdhani', sans-serif;
+        font-size: 13px;
+        font-weight: 500;
         color: #475569;
         text-align: center;
         letter-spacing: 0.1em;
+        text-transform: uppercase;
       }
 
       #cs-btn-cashout {
         width: 100%;
-        padding: 14px 0;
+        padding: 12px 0;
         border: none;
-        border-radius: 5px;
+        border-radius: 7px;
         font-family: 'Rajdhani', sans-serif;
-        font-size: 18px;
+        font-size: 20px;
         font-weight: 700;
-        letter-spacing: 0.1em;
+        letter-spacing: 0.12em;
         text-transform: uppercase;
         cursor: pointer;
         transition: all 0.2s;
         background: linear-gradient(135deg, #0d9488, #0891b2);
         color: #fff;
-        box-shadow: 0 0 12px rgba(13,148,136,0.4);
+        box-shadow: 0 0 16px rgba(13,148,136,0.45);
       }
 
       #cs-btn-cashout:hover:not(:disabled) {
-        box-shadow: 0 0 20px rgba(13,148,136,0.7);
+        box-shadow: 0 0 28px rgba(13,148,136,0.75);
         transform: translateY(-1px);
       }
 
       #cs-btn-cashout:disabled {
         background: #1e293b;
-        color: #334155;
+        color: #475569;
         cursor: not-allowed;
         box-shadow: none;
         transform: none;
       }
 
       #cs-current-win {
-        font-family: 'Share Tech Mono', monospace;
-        font-size: 11px;
+        font-family: 'Rajdhani', sans-serif;
+        font-size: 13px;
+        font-weight: 500;
         color: #475569;
         text-align: center;
-        letter-spacing: 0.08em;
+        letter-spacing: 0.06em;
       }
     </style>
 
     <div id="cs-win-panel">
       <div id="cs-win-amount">—</div>
-      <div id="cs-win-sub">CURRENT WIN</div>
+      <div id="cs-win-sub">Current Win</div>
     </div>
 
     <div>
       <div id="cs-zone-name">GROUND</div>
-      <div id="cs-cashout-sub">CASH OUT</div>
+      <div id="cs-cashout-sub">Current Zone</div>
     </div>
 
-    <button id="cs-btn-cashout" disabled>CASH OUT</button>
+    <button id="cs-btn-cashout" disabled>Cash Out</button>
 
-    <div id="cs-current-win">CURRENT WIN: —</div>
+    <div id="cs-current-win">Place a bet to see your win</div>
   `;
 
   container.appendChild(panel);
@@ -167,7 +154,6 @@ export function init(container, { getBet } = {}) {
     emit(ACTIONS.CASHOUT);
   });
 
-  // RenderBridge callbacks
   on('onRoundStart', () => {
     _voltage = 1.0;
     _locked  = false;
@@ -198,7 +184,7 @@ export function init(container, { getBet } = {}) {
   on('onRoundEnd', () => {
     setActive(false);
     _winEl.textContent = '—';
-    _subwinEl.textContent = 'CURRENT WIN: —';
+    _subwinEl.textContent = 'Place a bet to see your win';
   });
 }
 
@@ -217,17 +203,17 @@ function _updateZone(zone) {
   const color = ZONE_COLORS[zone] ?? '#00c9a7';
   _zoneEl.textContent = label;
   _zoneEl.style.color = color;
-  _zoneEl.style.textShadow = `0 0 12px ${color}`;
+  _zoneEl.style.textShadow = `0 0 14px ${color}`;
 }
 
 function _updateWin(bet = 0) {
   const mult = _voltage.toFixed(1);
   if (bet > 0) {
     const win = Math.round(bet * _voltage);
-    _winEl.textContent   = `${win.toLocaleString()} CR (${mult}×)`;
-    _subwinEl.textContent = `CURRENT WIN: ${win.toLocaleString()} CR`;
+    _winEl.textContent    = `${win.toLocaleString()} CR  ×${mult}`;
+    _subwinEl.textContent = `Current Win: ${win.toLocaleString()} CR`;
   } else {
-    _winEl.textContent   = `${mult}×`;
-    _subwinEl.textContent = 'PLACE A BET TO SEE WIN';
+    _winEl.textContent    = `×${mult}`;
+    _subwinEl.textContent = 'Place a bet to see your win';
   }
 }

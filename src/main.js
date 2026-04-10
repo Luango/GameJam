@@ -49,15 +49,12 @@ let _lobbyControls = null; // { hide, updatePlayers }
 
 initOrchestrator(eventBus, {
   onGameStart: () => {
-    // Hide lobby overlay once host broadcasts game-start
     _lobbyControls?.hide();
   },
   onPlayersUpdate: (players) => {
-    // Update lobby player list (client-side)
     _lobbyControls?.updatePlayers(players);
   },
   onLobbyUpdate: (players, isHost, roomCode) => {
-    // Update lobby player list (host-side)
     _lobbyControls?.updatePlayers(players);
   },
 });
@@ -124,7 +121,7 @@ function _makeColumn(justifyContent = 'flex-start') {
 }
 
 const hudLeft   = _makeColumn('flex-start');
-const hudCenter = _makeColumn('space-between');
+const hudCenter = _makeColumn('flex-start');
 const hudRight  = _makeColumn('flex-start');
 
 hud.appendChild(hudLeft);
@@ -182,12 +179,12 @@ tileInfoEl.appendChild(tileInfoInner);
 tileInfoInner.innerHTML = `
   <div id="cs-ti-zone" style="font-family:'Rajdhani',sans-serif;font-size:20px;font-weight:700;
        letter-spacing:0.12em;color:#00c9a7;text-shadow:0 0 10px #00c9a7;line-height:1.1"></div>
-  <div id="cs-ti-range" style="font-family:'Share Tech Mono',monospace;font-size:15px;
+  <div id="cs-ti-range" style="font-family:'Rajdhani',sans-serif;font-size:17px;font-weight:600;
        color:#e2e8f0;letter-spacing:0.06em"></div>
-  <div id="cs-ti-risk" style="font-family:'Share Tech Mono',monospace;font-size:12px;
+  <div id="cs-ti-risk" style="font-family:'Rajdhani',sans-serif;font-size:14px;font-weight:600;
        color:#64748b;letter-spacing:0.1em;text-transform:uppercase"></div>
-  <div style="font-family:'Share Tech Mono',monospace;font-size:10px;color:#475569;
-       letter-spacing:0.08em;margin-top:2px;border-top:1px solid rgba(255,255,255,0.05);
+  <div style="font-family:'Rajdhani',sans-serif;font-size:13px;font-weight:500;color:#475569;
+       letter-spacing:0.06em;margin-top:2px;border-top:1px solid rgba(255,255,255,0.05);
        padding-top:6px;width:100%">Higher risk = bigger multiplier</div>
 `;
 
@@ -212,24 +209,56 @@ setHoverCallback(({ zone }) => {
   tileInfoEl.style.opacity = '1';
 });
 
-// Bet + Cashout — bottom of center column, side by side
-const centerBottom = document.createElement('div');
-centerBottom.id = 'cs-center-bottom';
-Object.assign(centerBottom.style, {
-  display:        'flex',
-  flexDirection:  'row',
-  gap:            '12px',
-  alignItems:     'flex-end',
-  pointerEvents:  'auto',
-  justifyContent: 'center',
-});
-hudCenter.appendChild(centerBottom);
-
-initBetInput(centerBottom);
-initCashout(centerBottom, { getBet });
-
 // Overview map — right column top
 initOverview(hudRight);
+
+// ── Unified Bet + Cashout panel — fixed, bottom-center, ≥55% wide ─────────────
+// Injected directly on app so it sits outside the HUD grid and spans freely.
+const bottomPanel = document.createElement('div');
+bottomPanel.id = 'cs-bottom-panel';
+Object.assign(bottomPanel.style, {
+  position:       'fixed',
+  bottom:         '20px',
+  left:           '50%',
+  transform:      'translateX(-50%)',
+  width:          '50vw',
+  maxWidth:       '700px',
+  minWidth:       '480px',
+  display:        'flex',
+  flexDirection:  'row',
+  alignItems:     'stretch',
+  background:     'rgba(6, 14, 28, 0.92)',
+  backdropFilter: 'blur(14px)',
+  border:         '1px solid rgba(0, 201, 167, 0.30)',
+  borderRadius:   '12px',
+  boxShadow:      '0 0 40px rgba(0,0,0,0.5), 0 0 20px rgba(0,201,167,0.08)',
+  zIndex:         '200',
+  pointerEvents:  'auto',
+  overflow:       'hidden',
+});
+
+// Strip individual panel styling from inner panels so they blend into the unified shell
+const innerOverride = document.createElement('style');
+innerOverride.textContent = `
+  #cs-bottom-panel #cs-bet,
+  #cs-bottom-panel #cs-cashout {
+    background: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important;
+    flex: 1;
+  }
+  /* Vertical divider between the two halves */
+  #cs-bottom-panel #cs-bet {
+    border-right: 1px solid rgba(255,255,255,0.08) !important;
+  }
+`;
+document.head.appendChild(innerOverride);
+
+initBetInput(bottomPanel);
+initCashout(bottomPanel, { getBet });
+app.appendChild(bottomPanel);
 
 // Results overlay — mounts over everything, shown on onRoundEnd
 initResults(app);
@@ -247,15 +276,16 @@ _posLabel.textContent = 'CURRENT POS.';
 Object.assign(_posLabel.style, {
   position:      'absolute',
   pointerEvents: 'none',
-  fontFamily:    "'Share Tech Mono', monospace",
-  fontSize:      '9px',
-  letterSpacing: '0.14em',
+  fontFamily:    "'Rajdhani', sans-serif",
+  fontSize:      '11px',
+  fontWeight:    '600',
+  letterSpacing: '0.1em',
   color:         '#38bdf8',
   textShadow:    '0 0 8px #38bdf8',
   background:    'rgba(6,14,28,0.7)',
   border:        '1px solid rgba(56,189,248,0.3)',
   borderRadius:  '3px',
-  padding:       '2px 6px',
+  padding:       '2px 8px',
   whiteSpace:    'nowrap',
   display:       'none',
   transform:     'translate(-50%, -220%)',
