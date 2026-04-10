@@ -37,8 +37,9 @@ export function createTurnManager(opts) {
     sendToPeer,
     onTurnReveal,
     onRoundEnd,
-    turnTimerMs = 15000,
+    turnTimerMs = 30000,
     revealDelayMs = 2500,
+    getMatchNumber = () => 1,
   } = opts;
 
   // ─── State ───
@@ -176,7 +177,7 @@ export function createTurnManager(opts) {
       .filter(p => isActive(p))
       .map(p => p.id);
 
-    const allSubmitted = activeIds.every(id => pendingMoves[id]);
+    const allSubmitted = activeIds.length > 0 && activeIds.every((id) => pendingMoves[id]);
 
     if (allSubmitted) {
       clearTimeout(timerTimeout);
@@ -184,24 +185,24 @@ export function createTurnManager(opts) {
     }
   }
 
+  const IDLE_STRIKES_MAX = 3;
+
   /**
-   * Timer expired — auto-cashout non-submitters and resolve.
+   * Timer expired — record idle (no auto-cashout; cashout only via explicit action).
    */
   function onTimerExpired() {
     if (state !== TURN_STATE.AWAITING) return;
 
-    // Find players who didn't submit — auto-cashout them
-    const forfeitedIds = [];
+    const timedOutIds = [];
     for (const p of Object.values(players)) {
       if (isActive(p) && !pendingMoves[p.id]) {
-        // Auto-cashout: player didn't move, cash them out at current voltage
-        pendingMoves[p.id] = { tileId: null, action: ACTION.CASHOUT };
-        forfeitedIds.push(p.id);
+        pendingMoves[p.id] = { tileId: null, action: ACTION.TIMEOUT };
+        timedOutIds.push(p.id);
       }
     }
 
-    if (forfeitedIds.length > 0) {
-      broadcast(Msg.turnTimeout(forfeitedIds));
+    if (timedOutIds.length > 0) {
+      broadcast(Msg.turnTimeout(timedOutIds));
     }
 
     resolveTurn();
@@ -246,6 +247,29 @@ export function createTurnManager(opts) {
           isSimultaneousClaim: false,
           rewardClaimed: false,
           payout: player.payout,
+        });
+        continue;
+      }
+
+      // ── Turn timer expired (idle strike; 3× = bust) ──
+      if (move.action === ACTION.TIMEOUT) {
+        player.idleStrikes = (player.idleStrikes || 0) + 1;
+        if (player.idleStrikes >= IDLE_STRIKES_MAX) {
+          bustPlayer(player);
+        }
+        results.push({
+          playerId,
+          action: ACTION.TIMEOUT,
+          tileId: null,
+          tileState: null,
+          voltageGain: 0,
+          totalVoltage: player.voltage,
+          status: player.status,
+          isResistanceApplied: false,
+          isSimultaneousClaim: false,
+          rewardClaimed: false,
+          payout: null,
+          idleStrikes: player.idleStrikes,
         });
         continue;
       }
@@ -405,7 +429,7 @@ export function createTurnManager(opts) {
       .map((r, i) => ({ id: r.id, name: r.name, payout: r.payout, rank: i + 1 }));
 
     const endMsg = Msg.roundEnd({
-      roundNumber: 1, // Could track this if supporting multiple rounds
+      roundNumber: getMatchNumber(),
       totalTurns: turnNumber,
       results,
       leaderboard,
