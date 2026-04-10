@@ -8,10 +8,15 @@ import { buildGrid, updateTiles, setHoverCallback } from './renderer/HexGrid.js'
 import { initPathTracer }                     from './renderer/PathTracer.js';
 import { initTokens, updateTokens, getTokenPositions } from './renderer/PlayerToken.js';
 import {
-  init as initBridge, handleTilePick, handleHover, getLocalPlayerId,
+  init as initBridge,
+  handleTilePick,
+  handleHover,
+  getLocalPlayerId,
+  on,
 } from './state/RenderBridge.js';
 import { initHarness } from './dev/MockEventHarness.js';
-import { on } from './state/RenderBridge.js';
+import { startMusic } from './audio/AudioManager.js';
+import { initCosmos, updateCosmos } from './renderer/CosmosBackground.js';
 
 import { init as initVoltage }             from './hud/VoltageDisplay.js';
 import { init as initTimer }               from './hud/TurnTimer.js';
@@ -36,6 +41,8 @@ const app    = document.getElementById('app');
 // ── Renderer ──────────────────────────────────────────────────────────────────
 const { scene, camera } = init(canvas);
 
+// ── 3D scene — Fibonacci grid shown in lobby; replaced by buildFromBoard on game start ──
+initCosmos(scene);
 buildGrid(scene);
 initPathTracer(scene);
 initTokens(scene);
@@ -61,14 +68,24 @@ _lobbyControls = initLobby(app, {
 
 if (import.meta.env.DEV) initHarness(eventBus);
 
+// ── Background music — start on first interaction to satisfy autoplay policy ──
+let _musicStarted = false;
+function _ensureMusic() {
+  if (_musicStarted) return;
+  _musicStarted = true;
+  startMusic();
+}
+
 // ── Canvas interaction ────────────────────────────────────────────────────────
 canvas.addEventListener('pointerup', (e) => {
+  _ensureMusic();
   const { x, y } = _toNdc(e);
   handleTilePick({ x, y }, camera);
 });
 
 let _hoverScheduled = false;
 canvas.addEventListener('pointermove', (e) => {
+  _ensureMusic();
   if (_hoverScheduled) return;
   _hoverScheduled = true;
   requestAnimationFrame(() => {
@@ -348,6 +365,7 @@ function _updatePosLabel() {
 
 // ── Render loop ───────────────────────────────────────────────────────────────
 function loop(now) {
+  updateCosmos();
   updateTiles(now);
   updateTokens(now);
   updateMap();

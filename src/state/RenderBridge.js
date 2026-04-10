@@ -1,4 +1,5 @@
 import { EVENTS, ACTIONS } from '../constants/gameState.js';
+import { playSound } from '../audio/AudioManager.js';
 import {
   setTileState, resetGrid, pickTile,
   setSelectableTiles, clearSelectables,
@@ -16,6 +17,7 @@ let _localPlayerId = 0;
 let _playerCount   = 2;
 let _roundActive   = false;
 let _localBusted   = false;
+let _lastHoveredSelectableTile = -1;
 
 const _callbacks = {
   onReveal: [], onBust: [], onCashout: [],
@@ -80,6 +82,14 @@ export function handleHover(ndcPoint, camera) {
   if (!_roundActive) return;
   const tileId = pickTile(ndcPoint, camera);
   setHoveredTile(tileId);
+  if (tileId !== -1 && !_localBusted && isSelectable(tileId)) {
+    if (tileId !== _lastHoveredSelectableTile) {
+      _lastHoveredSelectableTile = tileId;
+      playSound('assets/sfx/Hover select tile.mp3');
+    }
+  } else {
+    _lastHoveredSelectableTile = -1;
+  }
 }
 
 // ─── Event handlers ───────────────────────────────────────────────────────────
