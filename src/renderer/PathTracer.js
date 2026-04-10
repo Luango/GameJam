@@ -1,139 +1,156 @@
 import * as THREE from 'three';
 import { PLAYER_COLORS } from '../constants/gameConfig.js';
 import { getTilePosition } from './HexGrid.js';
-import lightningUrl from '../../assets/vfx/lightning-bolt.png';
 
-// PathTracer — draws a glowing tube trail along the geodesic path a player has visited,
-// with animated lightning-bolt sprites and spark particles wrapping around the tube.
+// ── Sprite assets (Vite resolves to hashed public URLs at build time) ──────────
+import stripUrl  from '../../assets/vfx/trail-strip.png';
+import wispUrl   from '../../assets/vfx/trail-wisp.png';
+import sparkUrl  from '../../assets/vfx/trail-spark.png';
 
-const SPHERE_RADIUS  = 1.0;
-const TUBE_RADIUS    = 0.008;
-const TUBE_SEGMENTS  = 12;
-const PATH_SEGMENTS  = 24;
+// ─────────────────────────────────────────────────────────────────────────────
+// PathTracer — 3-layer electric trail system
+//
+//  Layer 1 (innermost) : thin hot-core tube — MeshBasicMaterial, additive
+//  Layer 2 (middle)    : scrolling trail-strip.png texture tube — flows forward
+//  Layer 3 (outermost) : wide soft glow halo — fakes bloom without post-FX
+//  + lightning-bolt sprites zigzagging around the tube
+//  + wisp particles  (trail-wisp.png)  travelling along the curve
+//  + spark particles (trail-spark.png) fast jitter around the tube
+// ─────────────────────────────────────────────────────────────────────────────
 
-// How many lightning sprites / sparks per path segment
-const SPRITE_COUNT  = 5;
-const SPARK_COUNT   = 28;
+const SPHERE_RADIUS    = 1.0;
+const PATH_SEGMENTS    = 32;   // geodesic subdivisions per segment
+const TUBE_SEGMENTS    = 8;    // radial faces per tube
 
-// ── Texture ────────────────────────────────────────────────────────────────────
+// Layer radii
+const RADIUS_CORE      = 0.0030;
+const RADIUS_STRIP     = 0.0070;
+const RADIUS_GLOW      = 0.0200;
+
+// Particle counts per trail segment
+const WISP_COUNT   = 22;
+const SPARK_COUNT  = 14;
+
+// UV scroll speed (strip texture) — units per second along U axis
+const STRIP_SCROLL_SPD = 0.45;
+
+// ── Texture cache ─────────────────────────────────────────────────────────────
 const _loader = new THREE.TextureLoader();
-let   _lightningTex = null;
-function _getTex() {
-  if (!_lightningTex) _lightningTex = _loader.load(lightningUrl);
-  return _lightningTex;
+let _stripTex = null;
+let _wispTex  = null;
+let _sparkTex = null;
+
+function _ensureTextures() {
+  if (_stripTex) return;
+
+  _stripTex = _loader.load(stripUrl);
+  _stripTex.wrapS = THREE.RepeatWrapping;
+  _stripTex.wrapT = THREE.RepeatWrapping;
+  _stripTex.repeat.set(6, 1); // tile 6× along tube length
+
+  _wispTex  = _loader.load(wispUrl);
+  _sparkTex = _loader.load(sparkUrl);
 }
 
-// ── State ──────────────────────────────────────────────────────────────────────
-let _scene = null;
+// ── Module state ──────────────────────────────────────────────────────────────
+let _scene   = null;
 let _lastNow = 0;
 
-// playerId → { group: THREE.Group, segments: Array<SegmentData> }
-// SegmentData = { tube: Mesh, sprites: Sprite[], sparks: Points, curve: CatmullRomCurve3, sparkData: SparkDatum[] }
+// playerId → { group: THREE.Group, segments: SegmentData[] }
 const _paths = new Map();
 
-// ── Init ───────────────────────────────────────────────────────────────────────
 export function initPathTracer(scene) {
   _scene = scene;
+  _ensureTextures();
 }
 
-// ── Geodesic helpers ───────────────────────────────────────────────────────────
-function _geodesicPoints(from, to, segments) {
-  const points = [];
-  const f = from.clone().normalize();
-  const t = to.clone().normalize();
-  for (let i = 0; i <= segments; i++) {
-    const alpha = i / segments;
-    const v = new THREE.Vector3().copy(f).lerp(t, alpha).normalize();
-    points.push(v.multiplyScalar(SPHERE_RADIUS + 0.006));
+// ── Geodesic arc ──────────────────────────────────────────────────────────────
+function _geodesicPoints(from, to, steps) {
+  const f   = from.clone().normalize();
+  const t   = to.clone().normalize();
+  const pts = [];
+  for (let i = 0; i <= steps; i++) {
+    const a = i / steps;
+    pts.push(
+      new THREE.Vector3().copy(f).lerp(t, a).normalize()
+        .multiplyScalar(SPHERE_RADIUS + 0.007),
+    );
   }
-  return points;
+  return pts;
 }
 
-// ── Tube ───────────────────────────────────────────────────────────────────────
-function _buildTube(points, color) {
-  const curve = new THREE.CatmullRomCurve3(points);
-  const geo   = new THREE.TubeGeometry(curve, PATH_SEGMENTS, TUBE_RADIUS, TUBE_SEGMENTS, false);
-  const mat   = new THREE.MeshStandardMaterial({
-    color,
-    emissive:          new THREE.Color(color),
-    emissiveIntensity: 0.55,
-    roughness:         0.25,
-    metalness:         0.6,
-    transparent:       true,
-    opacity:           0.85,
+// ── Perp-frame helper ─────────────────────────────────────────────────────────
+// Returns two vectors orthogonal to `tangent` — used for radial offsets.
+const _pA = new THREE.Vector3();
+const _pB = new THREE.Vector3();
+function _perpFrame(tangent) {
+  const guess = Math.abs(tangent.y) < 0.9 ? _pA.set(0, 1, 0) : _pA.set(1, 0, 0);
+  _pB.crossVectors(tangent, guess).normalize();
+  _pA.crossVectors(tangent, _pB).normalize();
+  return { a: _pA.clone(), b: _pB.clone() };
+}
+
+// ── Layer 1: Hot core ─────────────────────────────────────────────────────────
+function _buildCore(curve, color) {
+  const geo = new THREE.TubeGeometry(curve, PATH_SEGMENTS, RADIUS_CORE, TUBE_SEGMENTS, false);
+  const mat = new THREE.MeshBasicMaterial({
+    color:       new THREE.Color(color).multiplyScalar(2.2), // blown-out bright
+    transparent: true,
+    opacity:     0.92,
+    blending:    THREE.AdditiveBlending,
+    depthWrite:  false,
   });
-  return { mesh: new THREE.Mesh(geo, mat), curve };
+  return new THREE.Mesh(geo, mat);
 }
 
-// ── Lightning sprites ──────────────────────────────────────────────────────────
-// Each sprite is placed along the curve with a small perpendicular offset so it
-// looks like it's orbiting the tube.
-function _buildSprites(curve, color, count) {
-  const tex      = _getTex();
-  const colObj   = new THREE.Color(color);
-  const sprites  = [];
+// ── Layer 2: Scrolling energy strip ───────────────────────────────────────────
+function _buildStrip(curve, color) {
+  // Clone so each segment scrolls independently
+  const tex       = _stripTex.clone();
+  tex.needsUpdate = true;
 
-  for (let i = 0; i < count; i++) {
-    const t       = (i + 0.5) / count;
-    const pos     = curve.getPoint(t);
-    const tangent = curve.getTangent(t).normalize();
-
-    // Pick a random perpendicular direction (cross with a "up" guess)
-    const guess = Math.abs(tangent.y) < 0.9
-      ? new THREE.Vector3(0, 1, 0)
-      : new THREE.Vector3(1, 0, 0);
-    const perp = new THREE.Vector3().crossVectors(tangent, guess).normalize();
-    const rand = new THREE.Vector3().crossVectors(tangent, perp).normalize();
-    const angle = Math.random() * Math.PI * 2;
-    const perpOff = new THREE.Vector3()
-      .addScaledVector(perp, Math.cos(angle))
-      .addScaledVector(rand, Math.sin(angle))
-      .multiplyScalar(TUBE_RADIUS * (2 + Math.random() * 1.5));
-
-    pos.add(perpOff);
-
-    const mat = new THREE.SpriteMaterial({
-      map:        tex,
-      color:      colObj,
-      transparent: true,
-      opacity:    0.55,
-      blending:   THREE.AdditiveBlending,
-      depthWrite: false,
-      rotation:   Math.random() * Math.PI * 2,
-    });
-
-    const sprite     = new THREE.Sprite(mat);
-    const baseScale  = 0.022 + Math.random() * 0.018;
-    sprite.scale.setScalar(baseScale);
-    sprite.position.copy(pos);
-    sprite.userData  = {
-      baseScale,
-      phase:  Math.random() * Math.PI * 2,
-      speed:  0.7 + Math.random() * 1.0,
-    };
-    sprites.push(sprite);
-  }
-  return sprites;
+  const geo = new THREE.TubeGeometry(curve, PATH_SEGMENTS, RADIUS_STRIP, TUBE_SEGMENTS, false);
+  const mat = new THREE.MeshBasicMaterial({
+    map:         tex,
+    color:       new THREE.Color(color),
+    transparent: true,
+    opacity:     0.88,
+    blending:    THREE.AdditiveBlending,
+    depthWrite:  false,
+  });
+  return { mesh: new THREE.Mesh(geo, mat), tex };
 }
 
-// ── Spark particles ────────────────────────────────────────────────────────────
-// Small glowing dots that travel along the curve and wobble outward.
-function _buildSparks(curve, color, count) {
+// ── Layer 3: Soft outer glow halo ─────────────────────────────────────────────
+function _buildGlow(curve, color) {
+  const geo = new THREE.TubeGeometry(curve, PATH_SEGMENTS, RADIUS_GLOW, TUBE_SEGMENTS, false);
+  const mat = new THREE.MeshBasicMaterial({
+    color:       new THREE.Color(color),
+    transparent: true,
+    opacity:     0.07,
+    blending:    THREE.AdditiveBlending,
+    depthWrite:  false,
+  });
+  return new THREE.Mesh(geo, mat);
+}
+
+// ── Wisp particles (trail-wisp.png) ──────────────────────────────────────────
+// Soft glowing orbs that travel along the curve — slow, dreamy.
+function _buildWisps(curve, color, count) {
   const positions = new Float32Array(count * 3);
-  const sparkData = [];
+  const wispData  = [];
 
   for (let i = 0; i < count; i++) {
-    const t   = Math.random();
-    const pos = curve.getPoint(t);
+    const prog = Math.random();
+    const pos  = curve.getPoint(prog);
     positions[i * 3]     = pos.x;
     positions[i * 3 + 1] = pos.y;
     positions[i * 3 + 2] = pos.z;
-
-    sparkData.push({
-      progress:  t,
-      speed:     0.015 + Math.random() * 0.07,   // how fast the spark travels along the path
-      wobble:    Math.random() * Math.PI * 2,     // phase for radial wobble
-      wobbleSpd: 2.5 + Math.random() * 3.0,
+    wispData.push({
+      progress:  prog,
+      speed:     0.018 + Math.random() * 0.055,
+      wobble:    Math.random() * Math.PI * 2,
+      wobbleSpd: 1.8 + Math.random() * 2.0,
     });
   }
 
@@ -141,17 +158,70 @@ function _buildSparks(curve, color, count) {
   geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
 
   const mat = new THREE.PointsMaterial({
-    color:          new THREE.Color(color).multiplyScalar(1.6),
-    size:           0.007,
-    transparent:    true,
-    opacity:        0.85,
-    blending:       THREE.AdditiveBlending,
-    depthWrite:     false,
+    map:             _wispTex,
+    color:           new THREE.Color(color).multiplyScalar(1.6),
+    size:            0.024,
+    transparent:     true,
+    opacity:         0.70,
+    blending:        THREE.AdditiveBlending,
+    depthWrite:      false,
     sizeAttenuation: true,
+    alphaTest:       0.01,
   });
 
-  const points = new THREE.Points(geo, mat);
-  return { points, sparkData };
+  return { points: new THREE.Points(geo, mat), wispData };
+}
+
+// ── Spark particles (trail-spark.png) ─────────────────────────────────────────
+// Fast-moving white-hot sparks — jitter and crackle around the tube.
+function _buildSparks(curve, count) {
+  const positions = new Float32Array(count * 3);
+  const sparkData = [];
+
+  for (let i = 0; i < count; i++) {
+    const prog = Math.random();
+    const pos  = curve.getPoint(prog);
+    positions[i * 3]     = pos.x;
+    positions[i * 3 + 1] = pos.y;
+    positions[i * 3 + 2] = pos.z;
+    sparkData.push({
+      progress:  prog,
+      speed:     0.07 + Math.random() * 0.14,  // sparks travel faster
+      wobble:    Math.random() * Math.PI * 2,
+      wobbleSpd: 5.0 + Math.random() * 5.0,    // rapid electric jitter
+    });
+  }
+
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+
+  const mat = new THREE.PointsMaterial({
+    map:             _sparkTex,
+    color:           0xffffff,   // pure white — hot sparks are colourless
+    size:            0.013,
+    transparent:     true,
+    opacity:         0.92,
+    blending:        THREE.AdditiveBlending,
+    depthWrite:      false,
+    sizeAttenuation: true,
+    alphaTest:       0.01,
+  });
+
+  return { points: new THREE.Points(geo, mat), sparkData };
+}
+
+// ── Segment factory ───────────────────────────────────────────────────────────
+function _buildSegment(fromPos, toPos, color) {
+  const pts   = _geodesicPoints(fromPos, toPos, PATH_SEGMENTS);
+  const curve = new THREE.CatmullRomCurve3(pts);
+
+  const core                          = _buildCore(curve, color);
+  const { mesh: stripMesh, tex }      = _buildStrip(curve, color);
+  const glow                          = _buildGlow(curve, color);
+  const { points: wisps, wispData }   = _buildWisps(curve, color, WISP_COUNT);
+  const { points: sparks, sparkData } = _buildSparks(curve, SPARK_COUNT);
+
+  return { core, stripMesh, stripTex: tex, glow, wisps, wispData, sparks, sparkData, curve };
 }
 
 // ── Path management ────────────────────────────────────────────────────────────
@@ -165,97 +235,112 @@ function _getOrCreatePath(playerId) {
 }
 
 /**
- * Add a path segment for a player between two tile positions.
- * @param {number} playerId   — slot index 0–3
+ * Add a trail segment for a player moving between two tiles.
+ * @param {number} playerId   — slot 0–3
  * @param {number} fromTileId
  * @param {number} toTileId
  */
 export function addPathSegment(playerId, fromTileId, toTileId) {
+  _ensureTextures();
+
   const path  = _getOrCreatePath(playerId);
+  const color = PLAYER_COLORS[playerId] ?? 0xffffff;
   const from  = getTilePosition(fromTileId);
   const to    = getTilePosition(toTileId);
-  const pts   = _geodesicPoints(from, to, PATH_SEGMENTS);
-  const color = PLAYER_COLORS[playerId] ?? 0xffffff;
+  const seg   = _buildSegment(from, to, color);
 
-  const { mesh, curve }  = _buildTube(pts, color);
-  const sprites          = _buildSprites(curve, color, SPRITE_COUNT);
-  const { points, sparkData } = _buildSparks(curve, color, SPARK_COUNT);
+  path.group.add(seg.core);
+  path.group.add(seg.stripMesh);
+  path.group.add(seg.glow);
+  path.group.add(seg.wisps);
+  path.group.add(seg.sparks);
 
-  path.group.add(mesh);
-  sprites.forEach(s => path.group.add(s));
-  path.group.add(points);
-
-  path.segments.push({ tube: mesh, sprites, sparks: points, sparkData, curve });
-
-  // Track last point for chaining
-  path.points = path.points ?? [];
-  path.points.push(to.clone());
+  path.segments.push(seg);
 }
 
-// ── Animation loop ─────────────────────────────────────────────────────────────
-const _perpA = new THREE.Vector3();
-const _perpB = new THREE.Vector3();
-
+// ── Animation loop ────────────────────────────────────────────────────────────
 /**
- * Call once per frame from main.js loop(now).
- * @param {number} now — DOMHighResTimeStamp in milliseconds
+ * Call once per frame from the main render loop.
+ * @param {number} now — DOMHighResTimeStamp (ms)
  */
 export function updateTrails(now) {
-  const t  = now / 1000;          // seconds
-  const dt = Math.min((now - _lastNow) / 1000, 0.05); // capped delta (s)
+  const t  = now / 1000;
+  const dt = Math.min((now - _lastNow) / 1000, 0.05);
   _lastNow = now;
 
   _paths.forEach((path) => {
-    path.segments.forEach(({ sprites, sparks, sparkData, curve }) => {
+    path.segments.forEach((seg) => {
+      const { core, stripTex, glow, wisps, wispData, sparks, sparkData, curve } = seg;
 
-      // ── Sprites — pulse opacity & scale ──────────────────────────────────
-      sprites.forEach((sprite) => {
-        const { phase, speed, baseScale } = sprite.userData;
-        const pulse = 0.5 + 0.5 * Math.sin(t * speed * Math.PI * 2 + phase);
-        sprite.material.opacity = 0.25 + 0.55 * pulse;
-        sprite.scale.setScalar(baseScale * (0.7 + 0.6 * pulse));
+      // ── Layer 1: core flicker ─────────────────────────────────────────────
+      core.material.opacity = 0.80 + 0.18 * Math.sin(t * 8.7);
+
+      // ── Layer 2: scroll strip texture ────────────────────────────────────
+      if (stripTex) stripTex.offset.x -= STRIP_SCROLL_SPD * dt;
+
+      // ── Layer 3: glow breathe ─────────────────────────────────────────────
+      glow.material.opacity = 0.05 + 0.04 * Math.sin(t * 2.1);
+
+      // ── Wisps: travel + radial wobble ────────────────────────────────────
+      const wAttr = wisps.geometry.attributes.position;
+      wispData.forEach((wd, i) => {
+        wd.progress = (wd.progress + wd.speed * dt) % 1;
+
+        const pos = curve.getPoint(wd.progress);
+        const tan = curve.getTangent(wd.progress).normalize();
+        const { a, b } = _perpFrame(tan);
+
+        const angle  = t * wd.wobbleSpd + wd.wobble;
+        const radius = RADIUS_STRIP * (1.2 + 0.8 * Math.abs(Math.sin(t * 1.3 + wd.wobble)));
+        pos.addScaledVector(a, Math.cos(angle) * radius);
+        pos.addScaledVector(b, Math.sin(angle) * radius);
+
+        wAttr.setXYZ(i, pos.x, pos.y, pos.z);
       });
+      wAttr.needsUpdate       = true;
+      wisps.material.opacity  = 0.50 + 0.25 * Math.sin(t * 2.9);
 
-      // ── Sparks — travel along curve, wobble radially ──────────────────────
-      const posAttr = sparks.geometry.attributes.position;
-
+      // ── Sparks: fast travel + electric jitter ────────────────────────────
+      const sAttr = sparks.geometry.attributes.position;
       sparkData.forEach((sd, i) => {
         sd.progress = (sd.progress + sd.speed * dt) % 1;
 
-        const pos     = curve.getPoint(sd.progress);
-        const tangent = curve.getTangent(sd.progress).normalize();
+        const pos = curve.getPoint(sd.progress);
+        const tan = curve.getTangent(sd.progress).normalize();
+        const { a, b } = _perpFrame(tan);
 
-        // Build two arbitrary perpendicular axes to the tangent
-        const guess = Math.abs(tangent.y) < 0.9
-          ? _perpA.set(0, 1, 0)
-          : _perpA.set(1, 0, 0);
-        _perpB.crossVectors(tangent, guess).normalize();
-        _perpA.crossVectors(tangent, _perpB).normalize();
+        const angle  = t * sd.wobbleSpd + sd.wobble;
+        const radius = RADIUS_STRIP * (2.0 + 1.8 * Math.abs(Math.sin(t * 2.7 + sd.wobble)));
+        pos.addScaledVector(a, Math.cos(angle) * radius);
+        pos.addScaledVector(b, Math.sin(angle) * radius);
 
-        const wobbleAngle  = t * sd.wobbleSpd + sd.wobble;
-        const wobbleRadius = TUBE_RADIUS * (0.8 + 0.8 * Math.abs(Math.sin(t * 1.3 + sd.wobble)));
-
-        pos.addScaledVector(_perpB, Math.cos(wobbleAngle) * wobbleRadius);
-        pos.addScaledVector(_perpA, Math.sin(wobbleAngle) * wobbleRadius);
-
-        posAttr.setXYZ(i, pos.x, pos.y, pos.z);
+        sAttr.setXYZ(i, pos.x, pos.y, pos.z);
       });
-
-      posAttr.needsUpdate = true;
-
-      // Flicker the overall spark cloud opacity
-      sparks.material.opacity = 0.55 + 0.35 * Math.sin(t * 5.3);
+      sAttr.needsUpdate       = true;
+      // Electric stutter on the spark cloud as a whole
+      sparks.material.opacity = Math.random() > 0.08
+        ? 0.75 + 0.20 * Math.sin(t * 11.3)
+        : 0.10; // rare full-cloud flicker-off
     });
   });
 }
 
-// ── Cleanup ────────────────────────────────────────────────────────────────────
+// ── Cleanup ───────────────────────────────────────────────────────────────────
 export function clearPlayer(playerId) {
   const path = _paths.get(playerId);
   if (!path) return;
+
+  path.segments.forEach((seg) => {
+    [seg.core, seg.stripMesh, seg.glow, seg.wisps, seg.sparks].forEach((obj) => {
+      obj.geometry?.dispose();
+      obj.material?.dispose();
+      path.group.remove(obj);
+    });
+    seg.stripTex?.dispose();
+  });
+
   path.group.clear();
   path.segments = [];
-  path.points   = [];
 }
 
 export function clearAllPaths() {
