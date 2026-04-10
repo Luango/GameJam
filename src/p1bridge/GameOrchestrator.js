@@ -27,7 +27,7 @@ import { MODEL_LIST } from '../renderer/ModelLoader.js';
 
 export { PHASE };
 
-const BETTING_TIMER_MS = 20000;
+const BETTING_TIMER_MS = 30000;
 const MOVE_TIMER_MS = 30000;
 
 // ─── Module state ─────────────────────────────────────────────────────────────
