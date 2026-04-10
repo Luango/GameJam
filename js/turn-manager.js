@@ -310,7 +310,7 @@ export function createTurnManager(opts) {
         });
       } else {
         // ── Safe or Reward ──
-        const { voltageGain } = calculateStepVoltage(
+        const { stepMultiplier } = calculateStepVoltage(
           tile.zone,
           tileState,
           {
@@ -322,7 +322,7 @@ export function createTurnManager(opts) {
         );
 
         const rewardClaimed = tileState === TILE.REWARD && !isFollower;
-        applyStepResult(player, move.tileId, voltageGain, tile.zone);
+        applyStepResult(player, move.tileId, stepMultiplier, tile.zone);
 
         if (!isFollower) {
           player.tilesExplored++;
@@ -341,7 +341,7 @@ export function createTurnManager(opts) {
           action: ACTION.STEP,
           tileId: move.tileId,
           tileState,
-          voltageGain,
+          voltageGain: stepMultiplier, // wire compat: field name kept, value is now multiplier
           totalVoltage: player.voltage,
           status: player.status,
           isResistanceApplied: isFollower,
