@@ -3,6 +3,8 @@
 // Explains the 3 core mechanics: Spread, Junction, Cash Out.
 // Dismissed via button; localStorage prevents it from showing again.
 
+import voltexLogoUrl from '../../assets/Voltex_logo.png';
+
 const SEEN_KEY  = 'cs_howtoplay_seen';
 const FONT_MONO = "'Share Tech Mono', monospace";
 const FONT_UI   = "'Rajdhani', sans-serif";
@@ -131,11 +133,7 @@ function _build() {
     gap:            '4px',
   });
   header.innerHTML = `
-    <div style="font-family:${FONT_MONO};font-size:10px;letter-spacing:.26em;
-                color:#00c9a7;text-transform:uppercase;opacity:0.8;
-                animation:cs-htp-glow 2s ease infinite">
-      — VOLTEX —
-    </div>
+    <img src="${voltexLogoUrl}" alt="Voltex" style="max-width:140px;width:100%;height:auto;display:block;margin:0 auto 4px;opacity:0.9" />
     <div style="font-family:${FONT_UI};font-size:26px;font-weight:800;
                 letter-spacing:.12em;color:#e0f2fe;line-height:1.1;
                 text-shadow:0 0 20px rgba(0,201,167,0.2)">
