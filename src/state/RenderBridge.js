@@ -304,6 +304,7 @@ export function handleP1TurnReveal(results, newlyRevealedTiles) {
 
     if (status === 'busted') {
       bustToken(slot);
+      playSound('assets/sfx/Bust.mp3');
       if (playerId === _localPlayerId) {
         _localBusted = true;
         clearSelectables();
