@@ -14,10 +14,13 @@ let _panelEl = null;
 let _infoEl  = null;
 let _submitBet = null;
 let _isBettingPhase = null;
+let _getBankroll = null;
+let _balanceEl = null;
 
 export function init(container, options = {}) {
   _submitBet = typeof options.submitBet === 'function' ? options.submitBet : null;
   _isBettingPhase = typeof options.isBettingPhase === 'function' ? options.isBettingPhase : null;
+  _getBankroll = typeof options.getBankroll === 'function' ? options.getBankroll : null;
   injectStyles();
 
   const panel = document.createElement('div');
@@ -36,6 +39,14 @@ export function init(container, options = {}) {
 
       #cs-bet.locked { opacity: 0.45; pointer-events: none; }
 
+      #cs-bet .bet-head {
+        display: flex;
+        justify-content: space-between;
+        align-items: baseline;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+
       #cs-bet .bet-title {
         font-family: 'Rajdhani', sans-serif;
         font-size: 11px;
@@ -43,6 +54,15 @@ export function init(container, options = {}) {
         letter-spacing: 0.14em;
         text-transform: uppercase;
         color: #00c9a7;
+      }
+
+      #cs-bet .bet-balance {
+        font-family: 'Share Tech Mono', monospace;
+        font-size: 11px;
+        font-weight: 600;
+        letter-spacing: 0.06em;
+        color: #cbd5e1;
+        white-space: nowrap;
       }
 
       #cs-bet .bet-row {
@@ -137,7 +157,10 @@ export function init(container, options = {}) {
       }
     </style>
 
-    <div class="bet-title">Place Your Bet</div>
+    <div class="bet-head">
+      <span class="bet-title">Place Your Bet</span>
+      <span class="bet-balance" id="cs-bet-balance" hidden>Balance: —</span>
+    </div>
 
     <div class="bet-row">
       <input
@@ -166,6 +189,8 @@ export function init(container, options = {}) {
   _inputEl = panel.querySelector('#cs-bet-input');
   _btnEl   = panel.querySelector('#cs-btn-bet');
   _infoEl  = panel.querySelector('#cs-bet-info');
+  _balanceEl = panel.querySelector('#cs-bet-balance');
+  refreshBalance();
 
   panel.querySelectorAll('.bet-chip').forEach((chip) => {
     chip.addEventListener('click', () => {
@@ -186,6 +211,7 @@ export function init(container, options = {}) {
         _infoEl.textContent = `Wager sent: ${amount.toLocaleString()} CR`;
         _infoEl.style.color = '#00c9a7';
         _btnEl.disabled = true;
+        refreshBalance();
       } else {
         _infoEl.textContent = 'Invalid amount or exceeds bankroll';
         _infoEl.style.color = '#ef4444';
@@ -197,6 +223,7 @@ export function init(container, options = {}) {
     _infoEl.textContent = `Bet placed: ${amount.toLocaleString()} CR`;
     _infoEl.style.color = '#00c9a7';
     _btnEl.disabled = true;
+    refreshBalance();
   });
 
   on('onRoundStart', (p = {}) => {
@@ -213,9 +240,25 @@ export function init(container, options = {}) {
         _infoEl.style.color = '#64748b';
       }
     }
+    refreshBalance();
     lock();
   });
   on('onRoundEnd', () => unlock());
+}
+
+export function refreshBalance() {
+  if (!_balanceEl) return;
+  if (!_getBankroll) {
+    _balanceEl.hidden = true;
+    return;
+  }
+  const n = Number(_getBankroll());
+  if (!Number.isFinite(n)) {
+    _balanceEl.hidden = true;
+    return;
+  }
+  _balanceEl.hidden = false;
+  _balanceEl.textContent = `Balance: ${Math.round(n).toLocaleString()} CR`;
 }
 
 export function lock() {
@@ -232,6 +275,7 @@ export function unlock() {
   _infoEl.textContent = 'Round starts after all players bet';
   _infoEl.style.color = '#475569';
   _bet = 0;
+  refreshBalance();
 }
 
 /** Unlocks panel for host-synced pre-round wagering (orchestrator BETTING phase). */
@@ -243,6 +287,7 @@ export function enterBettingPhase() {
   _bet = 0;
   _infoEl.textContent = 'All players must wager to play';
   _infoEl.style.color = '#94a3b8';
+  refreshBalance();
 }
 
 /** Called by CashoutButton to calculate win amounts */

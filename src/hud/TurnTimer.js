@@ -241,6 +241,9 @@ export function startBettingCountdown(deadlineMs) {
 }
 
 export function stopBettingCountdown() {
+  // Only tear down the betting RAF. A second call (e.g. onGameStart right after
+  // onRoundStart → start()) must not cancel the turn timer's animation loop.
+  if (!_bettingMode) return;
   _bettingMode = false;
   if (_raf != null) {
     cancelAnimationFrame(_raf);
@@ -264,6 +267,13 @@ export function sync(remaining) {
   _lastSyncRemaining = remaining;
   _remaining = remaining;
   _setDisplay(remaining);
+  // After local expiry, _tick() sets _running false and stops scheduling frames. The next
+  // TURN_BEGIN (idle strike, next turn, etc.) only calls sync() — restart the loop then.
+  // If _running is already true, an existing RAF chain must keep running (do not call _tick twice).
+  if (!_bettingMode && remaining > 0 && !_running) {
+    _running = true;
+    _tick();
+  }
 }
 
 function _tick() {
