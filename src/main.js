@@ -165,6 +165,7 @@ function _toNdc(e) {
 Object.assign(hud.style, {
   position:            'absolute',
   inset:               '0',
+  zIndex:              '330', // above BetPhaseBanner dimmer (320) so bet / leaderboard stay readable
   pointerEvents:       'none',
   display:             'grid',
   gridTemplateColumns: '180px 1fr',
@@ -245,7 +246,7 @@ Object.assign(timerWrap.style, {
   display:       'flex',
   justifyContent:'center',
   pointerEvents: 'none',
-  zIndex:        '100',
+  zIndex:        '340',
 });
 app.appendChild(timerWrap);
 initTimer(timerWrap, { onLock: lockIn });
@@ -270,7 +271,7 @@ Object.assign(idleBarWrap.style, {
   border:         '1px solid rgba(255,255,255,0.08)',
   borderRadius:   '8px',
   padding:        '7px 14px',
-  zIndex:         '100',
+  zIndex:         '340',
   pointerEvents:  'none',
   opacity:        '0',
   transition:     'opacity 0.3s',
@@ -509,7 +510,7 @@ Object.assign(sidePanel.style, {
   border:         '1px solid rgba(0, 201, 167, 0.30)',
   borderRadius:   '12px',
   boxShadow:      '0 0 40px rgba(0,0,0,0.5), 0 0 20px rgba(0,201,167,0.06)',
-  zIndex:         '200',
+  zIndex:         '330',
   pointerEvents:  'none',
   overflow:       'hidden',
 });
