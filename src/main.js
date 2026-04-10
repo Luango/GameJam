@@ -46,6 +46,7 @@ import { init as initBetPhaseBanner }      from './hud/BetPhaseBanner.js';
 import { init as initBustOverlay }         from './hud/BustOverlay.js';
 import { init as initBustedSpectate }      from './hud/BustedSpectatePrompt.js';
 import { init as initHowToPlay }           from './hud/HowToPlayPanel.js';
+import { init as initMuteButton }          from './hud/MuteButton.js';
 
 import {
   init as initOrchestrator,
@@ -570,6 +571,9 @@ const _bustedSpectate = initBustedSpectate(app, {
   onSpectate: () => {},
   onLeave: () => leaveRoom(),
 });
+
+// ── Persistent controls ───────────────────────────────────────────────────────
+initMuteButton(app);
 
 on('onBust', ({ playerId }) => {
   if (playerId !== getLocalHudSlot()) return;
